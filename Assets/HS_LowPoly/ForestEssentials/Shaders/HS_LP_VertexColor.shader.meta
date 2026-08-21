@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: 0f0e90a66be01cd46b38737162d59bea
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  nonModifiableTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 397390
+  packageName: Low Poly Forest Essentials
+  packageVersion: 1.0
+  assetPath: Assets/HS_LowPoly/ForestEssentials/Shaders/HS_LP_VertexColor.shader
+  uploadId: 965694

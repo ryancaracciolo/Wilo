@@ -1,0 +1,51 @@
+{\rtf1\ansi\deff0{\fonttbl{\f0\fmodern Consolas;}}\f0\fs18 ==========================================================\par
+ HS_LP FOREST ESSENTIALS \u8212? Low Poly Forest Pack  (v1.0)\par
+==========================================================\par
+\par
+131 stylized low-poly forest assets: 44 unique tree species\par
+(19 deciduous, 13 conifer, 9 character, 3 fruit/tropical),\par
+4 saplings, water set (pond, stream, waterfall, lily pads,\par
+reeds, water plants) and a full forest floor: rocks, logs,\par
+bushes, grass, ferns, mushrooms, flowers and ground details.\par
+\par
+QUICK START\par
+-----------\par
+1. Drag prefabs from  HS_LowPoly/ForestEssentials/Prefabs/\par
+   into your scene. Everything is prefixed P_HS_LP_.\par
+2. Open  Scenes/HS_LP_ForestEssentials_Demo  to browse every\par
+   asset laid out by category.\par
+\par
+TECHNICAL\par
+---------\par
+- ONE material (M_HS_LP_Palette) + one 256x224 palette\par
+  texture (T_HS_LP_Palette, Point filter, no mips) for the\par
+  entire pack -> minimal draw calls, great for mobile.\par
+- ~30k triangles for ALL 131 assets (trees 300-1,200 tris,\par
+  props 20-330 tris).\par
+- Real-world scale, base-center pivots, clean HS_LP_ naming.\par
+- Lightmap UVs generated on import (static-friendly).\par
+\par
+VERTEX COLORS (texture-free workflow)\par
+-------------------------------------\par
+Every mesh ALSO carries vertex colors identical to the\par
+palette. Shaders/HS_LP_VertexColor.shader (+ material\par
+M_HS_LP_VertexColor) renders the pack with zero textures\par
+(URP shader: main light + ambient + shadows, matte).\par
+\par
+RENDER PIPELINES\par
+----------------\par
+Materials target the Universal Render Pipeline (URP) --\par
+the default pipeline for Unity 6 projects. They use\par
+URP/Lit with smoothness 0.\par
+- Built-in RP: select M_HS_LP_Palette and M_HS_LP_Ground\par
+  and switch their shader to "Standard" (the palette\par
+  texture slots straight in; set Smoothness to 0). The\par
+  vertex-color shader is URP-only.\par
+- HDRP: switch the two materials to HDRP/Lit and reassign\par
+  T_HS_LP_Palette as Base Map.\par
+The single flat palette texture makes any conversion\par
+lossless.\par
+\par
+SUPPORT\par
+-------\par
+Questions or requests: sauravp@keybrainstech.com\par}

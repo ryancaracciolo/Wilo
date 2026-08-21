@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 293a93947e1f99c4aa3c90c1ae8c3d9b
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 2100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 397390
+  packageName: Low Poly Forest Essentials
+  packageVersion: 1.0
+  assetPath: Assets/HS_LowPoly/ForestEssentials/Materials/M_HS_LP_VertexColor.mat
+  uploadId: 965694
