@@ -20,6 +20,7 @@ public class PlayerBoatInteractor : MonoBehaviour
     float cooldownUntil;
 
     public bool IsOnBoat => occupiedBoat != null;
+    public BoatMotor OccupiedBoat => occupiedBoat;
 
     void Awake()
     {
@@ -37,6 +38,9 @@ public class PlayerBoatInteractor : MonoBehaviour
 
     void Update()
     {
+        if (HudInput.PopupOpen)
+            return;
+
         if (!WasInteractPressed() || Time.time < cooldownUntil)
             return;
 

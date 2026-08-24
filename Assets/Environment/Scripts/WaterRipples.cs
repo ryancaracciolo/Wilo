@@ -64,13 +64,16 @@ public class WaterRipples : MonoBehaviour
         PushToShader();
     }
 
-    public static void Emit(Vector3 worldPosition, WaterRippleKind kind)
+    public static void Emit(Vector3 worldPosition, WaterRippleKind kind, float scale = 1f)
     {
         WaterRipples system = Instance;
         if (system == null)
             return;
 
-        system.EmitProfile(worldPosition, system.ProfileFor(kind));
+        WaterRippleProfile profile = system.ProfileFor(kind);
+        if (Mathf.Abs(scale - 1f) > 0.01f)
+            profile = profile.Scaled(scale);
+        system.EmitProfile(worldPosition, profile);
     }
 
     public static void Emit(Vector3 worldPosition, in WaterRippleProfile profile)
@@ -200,4 +203,16 @@ public struct WaterRippleProfile
         ringDelay = 0.2f,
         circularity = 0.88f
     };
+
+    public WaterRippleProfile Scaled(float scale)
+    {
+        scale = Mathf.Clamp(scale, 0.4f, 2.5f);
+        float t = Mathf.InverseLerp(0.4f, 2.5f, scale);
+        rings = Mathf.Max(1, rings + (scale > 1.55f ? 1 : 0));
+        speed *= Mathf.Lerp(0.88f, 1.2f, t);
+        width *= scale;
+        amplitude *= Mathf.Lerp(0.68f, 1.4f, t);
+        lifetime *= Mathf.Lerp(0.82f, 1.3f, t);
+        return this;
+    }
 }

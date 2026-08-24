@@ -14,6 +14,8 @@ GameObject:
   - component: {fileID: 8365608197191031830}
   - component: {fileID: 1247227781954298615}
   - component: {fileID: 2343988688261192196}
+  - component: {fileID: 8165954297627496651}
+  - component: {fileID: 4652612597619487346}
   m_Layer: 6
   m_Name: Player
   m_TagString: Player
@@ -144,7 +146,6 @@ MonoBehaviour:
   yawDegreesPerPixel: 0.22
   distancePerPixel: 0.12
   keyboardAimPixelsPerSecond: 520
-  lureSteerSpeed: 3.4
   maxYawOffset: 80
   flyDuration: 0.7
   retrieveSpeed: 9
@@ -152,9 +153,43 @@ MonoBehaviour:
   doubleClickWindow: 0.32
   arcHeight: 3.15
   castOriginOffset: {x: 0, y: 1.15, z: 0.2}
-  bobberRadius: 0.12
-  bobberColor: {r: 0.92, g: 0.28, b: 0.18, a: 1}
+  lureClearance: 0.1
   lineColor: {r: 0.93, g: 0.9, b: 0.82, a: 0.9}
+  liveColor: {r: 0.96, g: 0.97, b: 1, a: 1}
+  invalidColor: {r: 1, g: 0.58, b: 0.58, a: 1}
+--- !u!114 &8165954297627496651
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3260208116575933819}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bb8acd9cd368c4dbc9dc3aa04ac82eb3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerProgress
+  displayName: You
+  money: 250
+  bestSpecies: Largemouth
+  bestBassPounds: 0
+--- !u!114 &4652612597619487346
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3260208116575933819}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 45e700c067faa4d57990a4d35ac87bfa, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TackleBox
+  lures:
+  - {fileID: 11400000, guid: b5a0b85c10f304ba0b2c3a1c603d6096, type: 2}
+  - {fileID: 11400000, guid: 30c1966daf6e54e29aa34a11194d4483, type: 2}
+  - {fileID: 11400000, guid: 80b36d0715eeb4d8bb18c649f34ce74b, type: 2}
+  equipped: {fileID: 11400000, guid: b5a0b85c10f304ba0b2c3a1c603d6096, type: 2}
 --- !u!1 &5230997228319450216
 GameObject:
   m_ObjectHideFlags: 0

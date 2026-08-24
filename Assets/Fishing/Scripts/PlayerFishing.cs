@@ -5,6 +5,7 @@ using UnityEngine.InputSystem;
 /// Click-and-drag cast: left click or C to start, then steer with the mouse
 /// or arrows. Hold to reel; double-click to bring it all the way in.
 /// </summary>
+[DefaultExecutionOrder(-20)]
 public class PlayerFishing : MonoBehaviour
 {
     enum Phase
@@ -13,7 +14,9 @@ public class PlayerFishing : MonoBehaviour
         Aiming,
         Flying,
         InWater,
-        Retrieving
+        Retrieving,
+        Fighting,
+        ShowingCatch
     }
 
     [Header("Cast")]
@@ -23,7 +26,6 @@ public class PlayerFishing : MonoBehaviour
     [SerializeField] float yawDegreesPerPixel = 0.22f;
     [SerializeField] float distancePerPixel = 0.12f;
     [SerializeField] float keyboardAimPixelsPerSecond = 520f;
-    [SerializeField] float lureSteerSpeed = 3.4f;
     [SerializeField] float maxYawOffset = 80f;
     [SerializeField] float flyDuration = 0.7f;
     [SerializeField] float retrieveSpeed = 9f;
@@ -32,9 +34,8 @@ public class PlayerFishing : MonoBehaviour
     [SerializeField] float arcHeight = 3.15f;
     [SerializeField] Vector3 castOriginOffset = new Vector3(0f, 1.15f, 0.2f);
 
-    [Header("Bobber")]
-    [SerializeField] float bobberRadius = 0.12f;
-    [SerializeField] Color bobberColor = new Color(0.92f, 0.28f, 0.18f);
+    [Header("Lure")]
+    [SerializeField] float lureClearance = 0.1f;
     [SerializeField] Color lineColor = new Color(0.93f, 0.9f, 0.82f, 0.9f);
 
     [Header("Reticle")]
@@ -42,17 +43,33 @@ public class PlayerFishing : MonoBehaviour
     [SerializeField] Color invalidColor = new Color(1f, 0.58f, 0.58f, 1f);
 
     public bool IsFishing => phase != Phase.Idle;
+    public bool CapturesArrowKeys => phase == Phase.Aiming;
+    public FishFight Fight { get; private set; }
+    public event System.Action Escaped;
+
+    public void CancelCastClick()
+    {
+        if (phase == Phase.Aiming)
+            CancelAim();
+    }
 
     PlayerMotor motor;
     PlayerBoatInteractor boatInteractor;
+    PlayerProgress progress;
+    LakeSimulation lake;
+    LocalFishPopulation fishPopulation;
+    TackleBox tackle;
     InputAction attackAction;
     Camera cam;
+    PlayerOrbitCamera orbit;
     Transform waterSurface;
     float waterHeight;
     bool hasWaterHeight;
 
     Phase phase;
-    GameObject bobber;
+    GameObject lureObject;
+    LurePlaceholder lureVisual;
+    LureDefinition shownLure;
     LineRenderer line;
     CastMarker liveMarker;
     Vector3 flyStart;
@@ -68,11 +85,18 @@ public class PlayerFishing : MonoBehaviour
     bool aimHeldByKeyboard;
     bool retrieveAllTheWay;
     float lastCastPressTime = -10f;
+    FishAgent hooked;
+    FishFight fight;
+    int ignoreCastFrame = -1;
+    Quaternion catchFacingSaved;
+    bool catchFacingStored;
 
     void Awake()
     {
         motor = GetComponent<PlayerMotor>();
         boatInteractor = GetComponent<PlayerBoatInteractor>();
+        progress = GetComponent<PlayerProgress>();
+        tackle = GetComponent<TackleBox>();
     }
 
     void OnEnable()
@@ -81,12 +105,26 @@ public class PlayerFishing : MonoBehaviour
         attackAction = actions != null ? actions.FindAction("Player/Attack") : null;
         attackAction?.Enable();
         CacheWaterHeight();
+        lake = FindFirstObjectByType<LakeSimulation>();
+        if (lake != null)
+        {
+            fishPopulation = lake.GetComponent<LocalFishPopulation>();
+            LurePresence lure = lake.Lure ?? lake.GetComponent<LurePresence>() ?? lake.gameObject.AddComponent<LurePresence>();
+            lure.Struck += OnFishStruck;
+        }
+
+        if (tackle != null)
+            tackle.Changed += OnTackleChanged;
     }
 
     void Update()
     {
         if (cam == null)
+        {
             cam = Camera.main;
+            if (cam != null)
+                orbit = cam.GetComponent<PlayerOrbitCamera>();
+        }
 
         switch (phase)
         {
@@ -107,13 +145,25 @@ public class PlayerFishing : MonoBehaviour
             case Phase.Retrieving:
                 TickRetrieve();
                 break;
+            case Phase.Fighting:
+                TickFight();
+                break;
+            case Phase.ShowingCatch:
+                TickShowingCatch();
+                break;
         }
 
+        UpdateLure();
         UpdateLine();
     }
 
     bool WasCastPressed()
     {
+        if (Time.frameCount <= ignoreCastFrame)
+            return false;
+        if (HudInput.BlocksWorldClick)
+            return false;
+
         if (attackAction != null && attackAction.WasPressedThisFrame())
             return true;
         if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
@@ -129,6 +179,13 @@ public class PlayerFishing : MonoBehaviour
         if (attackAction != null && attackAction.WasReleasedThisFrame())
             return true;
         return Mouse.current != null && Mouse.current.leftButton.wasReleasedThisFrame;
+    }
+
+    bool IsFightHeld()
+    {
+        if (IsCastHeld())
+            return true;
+        return Keyboard.current != null && Keyboard.current.spaceKey.isPressed;
     }
 
     bool IsCastHeld()
@@ -198,10 +255,13 @@ public class PlayerFishing : MonoBehaviour
         }
 
         keyboardAimOffset += ArrowAim() * keyboardAimPixelsPerSecond * Time.deltaTime;
-        Vector2 drag = CurrentMousePosition() - aimMouseOrigin + keyboardAimOffset;
-        float yaw = Mathf.Clamp(-drag.x * yawDegreesPerPixel, -maxYawOffset, maxYawOffset);
+        Vector2 mouseDrag = CurrentMousePosition() - aimMouseOrigin;
+        float yaw = Mathf.Clamp(
+            (-mouseDrag.x + keyboardAimOffset.x) * yawDegreesPerPixel,
+            -maxYawOffset,
+            maxYawOffset);
         float distance = Mathf.Clamp(
-            startCastDistance - drag.y * distancePerPixel,
+            startCastDistance - mouseDrag.y * distancePerPixel + keyboardAimOffset.y * distancePerPixel,
             minCastDistance,
             maxCastDistance);
 
@@ -213,7 +273,7 @@ public class PlayerFishing : MonoBehaviour
         bool liveOnWater = IsWaterAt(livePos);
 
         pendingLanding = livePos;
-        pendingLanding.y = waterHeight + bobberRadius;
+        pendingLanding.y = waterHeight;
         pendingValid = liveOnWater;
 
         SetLiveMarker(true, livePos);
@@ -239,12 +299,14 @@ public class PlayerFishing : MonoBehaviour
     void ReleaseCast()
     {
         HideMarkers();
-        EnsureBobber();
+        EnsureLure();
+        ApplyEquippedLure();
         flyStart = transform.TransformPoint(castOriginOffset);
         flyEnd = pendingLanding;
         flyTime = 0f;
-        bobber.SetActive(true);
-        bobber.transform.position = flyStart;
+        lureObject.SetActive(true);
+        lureObject.transform.position = flyStart;
+        lureObject.transform.rotation = Quaternion.LookRotation(Flatten(flyEnd - flyStart), Vector3.up);
         phase = Phase.Flying;
     }
 
@@ -274,11 +336,11 @@ public class PlayerFishing : MonoBehaviour
         float distance = Vector3.Distance(flyStart, flyEnd);
         float arc = ArcHeight(distance);
         pos.y += Mathf.Sin(eased * Mathf.PI) * arc;
-        bobber.transform.position = pos;
+        lureObject.transform.position = pos;
 
         if (t >= 1f)
         {
-            bobber.transform.position = flyEnd;
+            lureObject.transform.position = flyEnd;
             WaterRipples.Emit(flyEnd, WaterRippleKind.Cast);
             retrieveAllTheWay = false;
             reelRippleTraveled = 0f;
@@ -288,7 +350,7 @@ public class PlayerFishing : MonoBehaviour
 
     void TickInWater()
     {
-        SteerLureOnWater();
+        ApplySink();
 
         if (ConsumeDoubleClick())
         {
@@ -313,71 +375,42 @@ public class PlayerFishing : MonoBehaviour
 
         if (!retrieveAllTheWay && !IsCastHeld())
         {
-            Vector3 rest = bobber.transform.position;
-            rest.y = waterHeight + bobberRadius;
-            bobber.transform.position = rest;
             phase = Phase.InWater;
             return;
         }
 
         Vector3 rod = transform.TransformPoint(castOriginOffset);
-        Vector3 previous = bobber.transform.position;
+        Vector3 previous = lureObject.transform.position;
 
-        Vector3 planar = previous;
-        planar.y = waterHeight + bobberRadius;
-        Vector3 planarTarget = rod;
-        planarTarget.y = waterHeight + bobberRadius;
+        Vector3 planar = new Vector3(previous.x, 0f, previous.z);
+        Vector3 planarTarget = new Vector3(rod.x, 0f, rod.z);
         planar = Vector3.MoveTowards(planar, planarTarget, retrieveSpeed * Time.deltaTime);
-        SteerLurePlanar(ref planar);
 
-        float remaining = Vector3.Distance(
-            new Vector3(planar.x, 0f, planar.z),
-            new Vector3(rod.x, 0f, rod.z));
+        float remaining = Vector3.Distance(planar, planarTarget);
         float liftT = 1f - Mathf.Clamp01(remaining / retrieveLiftDistance);
         liftT = liftT * liftT * liftT;
 
-        Vector3 next = planar;
-        next.y = Mathf.Lerp(waterHeight + bobberRadius, rod.y, liftT);
-        bobber.transform.position = next;
+        float y = previous.y;
+        if (liftT < 0.05f)
+            y -= CurrentSinkSpeed() * Time.deltaTime;
+        else
+            y = Mathf.Lerp(y, rod.y, liftT);
 
-        if (liftT < 0.2f)
-            EmitReelRipples(previous, next, Flatten(planarTarget - previous));
+        float bedY = BedY(planar);
+        if (liftT < 0.05f)
+            y = Mathf.Clamp(y, bedY, waterHeight - 0.02f);
+        else
+            y = Mathf.Max(y, bedY);
+
+        Vector3 next = new Vector3(planar.x, y, planar.z);
+        lureObject.transform.position = next;
+        OrientLure(planarTarget - planar);
+
+        if (liftT < 0.2f && next.y > waterHeight - 0.4f)
+            EmitReelRipples(previous, next, Flatten(planarTarget - planar));
 
         if (Vector3.Distance(next, rod) <= 0.28f)
             EndFishing();
-    }
-
-    void SteerLureOnWater()
-    {
-        Vector3 planar = bobber.transform.position;
-        planar.y = waterHeight + bobberRadius;
-        SteerLurePlanar(ref planar);
-        bobber.transform.position = planar;
-    }
-
-    void SteerLurePlanar(ref Vector3 planar)
-    {
-        Vector2 arrows = ArrowAim();
-        if (arrows.sqrMagnitude < 0.0001f)
-            return;
-
-        Vector3 right = Flatten(cam != null ? cam.transform.right : transform.right);
-        Vector3 forward = Flatten(cam != null ? cam.transform.forward : transform.forward);
-        Vector3 next = planar + (right * arrows.x + forward * arrows.y) * lureSteerSpeed * Time.deltaTime;
-        next.y = waterHeight + bobberRadius;
-
-        Vector3 origin = transform.position;
-        origin.y = waterHeight;
-        Vector3 offset = next - origin;
-        offset.y = 0f;
-        float range = offset.magnitude;
-        if (range > maxCastDistance)
-            next = origin + offset / range * maxCastDistance;
-
-        if (!IsWaterAt(next))
-            return;
-
-        planar = next;
     }
 
     void EmitReelRipples(Vector3 from, Vector3 to, Vector3 along)
@@ -396,13 +429,217 @@ public class PlayerFishing : MonoBehaviour
         WaterRipples.Emit(splash - side * 0.2f, WaterRippleKind.Reel);
     }
 
+    void OnFishStruck(FishAgent fish)
+    {
+        if (hooked != null || fish == null || lureObject == null)
+            return;
+
+        hooked = fish;
+        fishPopulation?.Detach(fish);
+        fish.Hook(lureObject.transform, transform);
+        WaterRipples.Emit(lureObject.transform.position, WaterRippleKind.Cast);
+        if (lake != null && lake.Lure != null)
+            lake.Lure.Clear();
+        fight = new FishFight();
+        fight.Begin(fish.Size.Pounds);
+        Fight = fight;
+        retrieveAllTheWay = false;
+        phase = Phase.Fighting;
+    }
+
+    void TickFight()
+    {
+        if (fight == null || hooked == null)
+        {
+            EndFishing();
+            return;
+        }
+
+        FishFight.Result result = fight.Tick(IsFightHeld(), Time.deltaTime);
+        if (result == FishFight.Result.Won)
+            FinishFight(true);
+        else if (result == FishFight.Result.Lost)
+            FinishFight(false);
+    }
+
+    void TickShowingCatch()
+    {
+        FaceCatchCamera(10f);
+        if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
+            DismissCatch();
+    }
+
+    public void DismissCatch()
+    {
+        if (phase != Phase.ShowingCatch)
+            return;
+
+        ignoreCastFrame = Time.frameCount;
+        if (hooked != null)
+        {
+            fishPopulation?.Remove(hooked);
+            hooked = null;
+        }
+
+        EndFishing();
+    }
+
+    void FinishFight(bool won)
+    {
+        fight = null;
+        Fight = null;
+
+        if (won && hooked != null)
+        {
+            LandCatch(hooked);
+            if (lureObject != null)
+                lureObject.SetActive(false);
+            phase = Phase.ShowingCatch;
+            BeginCatchCamera(hooked);
+            return;
+        }
+
+        if (hooked != null)
+        {
+            fishPopulation?.Remove(hooked);
+            hooked = null;
+            Escaped?.Invoke();
+        }
+
+        EndFishing();
+    }
+
+    void UpdateLure()
+    {
+        if (lake == null || lake.Lure == null)
+            return;
+
+        bool inPlay = hooked == null &&
+            (phase == Phase.InWater || phase == Phase.Retrieving) &&
+            lureObject != null && lureObject.activeSelf;
+        if (inPlay)
+            lake.Lure.Set(lureObject.transform.position);
+        else if (hooked == null)
+            lake.Lure.Clear();
+    }
+
+    void LandCatch(FishAgent fish)
+    {
+        if (fish == null)
+            return;
+
+        Vector3 at = fish.transform.position;
+        WorldConditions world = lake != null ? lake.Conditions : null;
+        LureDefinition lure = tackle != null ? tackle.Equipped : null;
+        HabitatFeatures spot = lake != null ? lake.SampleFeatures(at) : default;
+
+        var record = new CatchRecord
+        {
+            SpeciesName = fish.Species != null ? fish.Species.DisplayName : "Bass",
+            Pounds = fish.Size.Pounds,
+            LengthInches = fish.Size.LengthInches,
+            LureName = lure != null ? lure.DisplayName : "Lure",
+            LureColor = lure != null ? lure.Color : new Color(0.55f, 0.38f, 0.22f),
+            WorldPosition = at,
+            DepthFeet = spot.DepthFeet,
+            Hour = world != null ? world.Hour : 0f,
+            TimeLabel = world != null ? world.TimeLabel : "",
+            WeatherLabel = world != null ? world.WeatherLabel : "",
+            WaterTempF = world != null ? world.WaterTempF : 0f,
+            SeasonLabel = world != null ? world.SeasonLabel : ""
+        };
+
+        if (progress == null)
+            progress = GetComponent<PlayerProgress>();
+        SaveCatchFacing();
+        FaceCatchCamera(0f);
+        progress?.RecordCatch(record);
+        fish.PresentCatch(transform);
+    }
+
+    void SaveCatchFacing()
+    {
+        if (catchFacingStored)
+            return;
+        catchFacingSaved = transform.localRotation;
+        catchFacingStored = true;
+    }
+
+    void RestoreCatchFacing()
+    {
+        if (!catchFacingStored)
+            return;
+        transform.localRotation = catchFacingSaved;
+        catchFacingStored = false;
+    }
+
+    void FaceCatchCamera(float rate)
+    {
+        if (cam == null)
+            cam = Camera.main;
+        if (cam == null)
+            return;
+
+        Vector3 toCam = cam.transform.position - transform.position;
+        toCam.y = 0f;
+        if (toCam.sqrMagnitude < 0.0001f)
+        {
+            toCam = -cam.transform.forward;
+            toCam.y = 0f;
+        }
+
+        if (toCam.sqrMagnitude < 0.0001f)
+            return;
+
+        Quaternion look = Quaternion.LookRotation(toCam.normalized, Vector3.up);
+        if (rate <= 0.01f)
+            transform.rotation = look;
+        else
+            transform.rotation = Quaternion.Slerp(
+                transform.rotation,
+                look,
+                1f - Mathf.Exp(-rate * Time.deltaTime));
+    }
+
+    void BeginCatchCamera(FishAgent fish)
+    {
+        if (orbit == null && cam != null)
+            orbit = cam.GetComponent<PlayerOrbitCamera>();
+        orbit?.BeginCatchFraming(fish != null ? fish.transform : null);
+    }
+
+    void EndCatchCamera()
+    {
+        if (orbit == null && cam != null)
+            orbit = cam.GetComponent<PlayerOrbitCamera>();
+        orbit?.EndCatchFraming();
+    }
+
     void EndFishing()
     {
+        if (phase == Phase.ShowingCatch)
+        {
+            EndCatchCamera();
+            RestoreCatchFacing();
+        }
+
+        if (hooked != null)
+        {
+            fishPopulation?.Remove(hooked);
+            hooked = null;
+        }
+
+        fight = null;
+        Fight = null;
+
+        if (lake != null && lake.Lure != null)
+            lake.Lure.Clear();
+
         retrieveAllTheWay = false;
         phase = Phase.Idle;
         HideMarkers();
-        if (bobber != null)
-            bobber.SetActive(false);
+        if (lureObject != null)
+            lureObject.SetActive(false);
         SetFishingLocked(false);
     }
 
@@ -432,19 +669,25 @@ public class PlayerFishing : MonoBehaviour
             return;
         }
 
-        if (bobber == null || !bobber.activeSelf || phase == Phase.Idle)
+        if (lureObject == null || !lureObject.activeSelf || phase == Phase.Idle || phase == Phase.ShowingCatch)
         {
             line.enabled = false;
             return;
         }
 
-        if (phase == Phase.Flying)
+        if (phase == Phase.Fighting && hooked != null)
         {
-            SetLineArc(rod, bobber.transform.position);
+            SetLineTo(rod, hooked.LinePoint);
             return;
         }
 
-        SetLineTo(rod, bobber.transform.position);
+        if (phase == Phase.Flying)
+        {
+            SetLineArc(rod, lureObject.transform.position);
+            return;
+        }
+
+        SetLineTo(rod, lureObject.transform.position);
     }
 
     void SetLineArc(Vector3 start, Vector3 end, float heightScale = 1f)
@@ -469,12 +712,13 @@ public class PlayerFishing : MonoBehaviour
         EnsureLinePoints(points);
 
         float sag = Mathf.Min(0.35f, Vector3.Distance(start, end) * 0.04f);
+        bool pinToWater = phase != Phase.Fighting && end.y >= waterHeight - 0.04f;
         for (int i = 0; i < points; i++)
         {
             float t = i / (points - 1f);
             Vector3 point = Vector3.Lerp(start, end, t);
             point.y -= Mathf.Sin(t * Mathf.PI) * sag;
-            if (point.y < waterHeight + 0.02f)
+            if (pinToWater && point.y < waterHeight + 0.02f)
                 point.y = waterHeight + 0.02f;
             line.SetPosition(i, point);
         }
@@ -492,19 +736,14 @@ public class PlayerFishing : MonoBehaviour
         return Mathf.Lerp(1.45f, arcHeight, Mathf.InverseLerp(minCastDistance, maxCastDistance, distance));
     }
 
-    void EnsureBobber()
+    void EnsureLure()
     {
-        if (bobber != null)
+        if (lureObject != null)
             return;
 
-        bobber = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        bobber.name = "Bobber";
-        bobber.transform.localScale = Vector3.one * (bobberRadius * 2f);
-        Object.Destroy(bobber.GetComponent<Collider>());
-        var renderer = bobber.GetComponent<MeshRenderer>();
-        var mat = new Material(FindLitShader());
-        mat.SetColor("_BaseColor", bobberColor);
-        renderer.sharedMaterial = mat;
+        lureObject = new GameObject("Lure");
+        lureObject.SetActive(false);
+        lureVisual = lureObject.AddComponent<LurePlaceholder>();
 
         var lineGo = new GameObject("FishingLine");
         lineGo.transform.SetParent(transform, false);
@@ -519,9 +758,69 @@ public class PlayerFishing : MonoBehaviour
         line.endColor = lineColor;
     }
 
+    void OnTackleChanged()
+    {
+        if (phase == Phase.Idle || phase == Phase.Aiming || phase == Phase.ShowingCatch)
+            return;
+        ApplyEquippedLure();
+    }
+
+    void ApplyEquippedLure()
+    {
+        EnsureLure();
+        LureDefinition lure = tackle != null ? tackle.Equipped : null;
+        if (lure == shownLure && lureObject.transform.childCount > 0)
+            return;
+        shownLure = lure;
+        lureVisual.Apply(lure);
+    }
+
+    void ApplySink()
+    {
+        if (lureObject == null)
+            return;
+
+        Vector3 pos = lureObject.transform.position;
+        float bedY = BedY(pos);
+        float nextY = Mathf.Clamp(pos.y - CurrentSinkSpeed() * Time.deltaTime, bedY, waterHeight - 0.02f);
+        pos.y = nextY;
+        lureObject.transform.position = pos;
+    }
+
+    void OrientLure(Vector3 planarDelta)
+    {
+        if (lureObject == null || planarDelta.sqrMagnitude < 0.0001f)
+            return;
+
+        Quaternion look = Quaternion.LookRotation(planarDelta.normalized, Vector3.up);
+        lureObject.transform.rotation = Quaternion.Slerp(
+            lureObject.transform.rotation,
+            look,
+            1f - Mathf.Exp(-8f * Time.deltaTime));
+    }
+
+    float CurrentSinkSpeed()
+    {
+        LureDefinition lure = tackle != null ? tackle.Equipped : null;
+        return lure != null ? lure.SinkSpeed : 0.35f;
+    }
+
+    float BedY(Vector3 world)
+    {
+        float depth = lake != null ? lake.GeometricDepthMeters(world) : 2f;
+        if (depth < 0.05f)
+        {
+            Terrain terrain = Terrain.activeTerrain;
+            if (terrain != null)
+                return terrain.SampleHeight(world) + terrain.transform.position.y + lureClearance;
+        }
+
+        return waterHeight - depth + lureClearance;
+    }
+
     void EnsureMarkers()
     {
-        EnsureBobber();
+        EnsureLure();
         if (liveMarker == null)
             liveMarker = CastMarker.Create("CastLive", 0.42f, liveColor);
     }
@@ -548,12 +847,6 @@ public class PlayerFishing : MonoBehaviour
     {
         value.y = 0f;
         return value.sqrMagnitude > 0.001f ? value.normalized : Vector3.forward;
-    }
-
-    static Shader FindLitShader()
-    {
-        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
-        return shader != null ? shader : Shader.Find("Sprites/Default");
     }
 
     static Shader FindUnlitShader()
@@ -591,6 +884,10 @@ public class PlayerFishing : MonoBehaviour
 
     void OnDisable()
     {
+        if (tackle != null)
+            tackle.Changed -= OnTackleChanged;
+        if (lake != null && lake.Lure != null)
+            lake.Lure.Struck -= OnFishStruck;
         EndFishing();
     }
 

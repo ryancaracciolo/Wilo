@@ -61,6 +61,12 @@ public class PlayerMotor : MonoBehaviour
         if (cameraTransform == null && Camera.main != null)
             cameraTransform = Camera.main.transform;
 
+        if (HudInput.PopupOpen)
+        {
+            ApplyGravityOnly();
+            return;
+        }
+
         Vector2 moveInput = moveAction != null ? moveAction.ReadValue<Vector2>() : Vector2.zero;
         bool sprinting = sprintAction != null && sprintAction.IsPressed();
 
@@ -116,6 +122,20 @@ public class PlayerMotor : MonoBehaviour
         Vector3 side = Vector3.Cross(Vector3.up, planar.normalized);
         WaterRipples.Emit(splash + side * 0.18f, WaterRippleKind.Wade);
         WaterRipples.Emit(splash - side * 0.18f, WaterRippleKind.Wade);
+    }
+
+    void ApplyGravityOnly()
+    {
+        if (controller.isGrounded && verticalVelocity < 0f)
+            verticalVelocity = -2f;
+        else
+            verticalVelocity += gravity * Time.deltaTime;
+
+        CollisionFlags flags = controller.Move(new Vector3(0f, verticalVelocity, 0f) * Time.deltaTime);
+        if ((flags & CollisionFlags.Below) != 0 && verticalVelocity < 0f)
+            verticalVelocity = -2f;
+
+        Velocity = controller.velocity;
     }
 
     Vector3 CameraRelativePlanar(Vector2 input)

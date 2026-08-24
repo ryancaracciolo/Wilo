@@ -1,0 +1,82 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &3869917734387365704
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 6290375047716392918}
+  - component: {fileID: 4581293646155053057}
+  - component: {fileID: 7128491023847561023}
+  m_Layer: 0
+  m_Name: Lake
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &6290375047716392918
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3869917734387365704}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &4581293646155053057
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3869917734387365704}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9a170488dde08471699a9e9a6794c140, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::LakeSimulation
+  conditions: {fileID: 0}
+  species:
+  - {fileID: 11400000, guid: 1c8e891a535284035976b95ff485fd14, type: 2}
+  - {fileID: 11400000, guid: 6698b3b9170324a3dac0e050c5a90b89, type: 2}
+  profile: {fileID: 11400000, guid: c91e4a7b6d2f40e8a5b3c1d9e7f0a246, type: 2}
+  fishPerThousandSqMeters: 4
+  activity: 0.5
+  meanPounds: 2.5
+  poundsSpread: 1.5
+  landDepthMeters: 0.05
+--- !u!114 &7128491023847561023
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3869917734387365704}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fead8c4acde7b42419c03d3027bce0fc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::LocalFishPopulation
+  lake: {fileID: 4581293646155053057}
+  cellSize: 24
+  activeRadius: 72
+  despawnRadius: 96
+  maxFish: 22
+  maxFishPerCell: 3
+  maxCellActivationsPerUpdate: 6
+  updateInterval: 0.15
+  prewarmPerSpecies: 8
+  keepClearOfViewer: 3
+  visualScaleMultiplier: 2.3
+  visibilityScale: 1
+  viewDistance: 48

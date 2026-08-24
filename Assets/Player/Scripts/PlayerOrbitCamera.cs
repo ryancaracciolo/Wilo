@@ -38,12 +38,20 @@ public class PlayerOrbitCamera : MonoBehaviour
     [Header("Follow")]
     [SerializeField] float followSmoothTime = 0.08f;
 
+    [Header("Catch framing")]
+    [SerializeField] float catchDistance = 3.3f;
+    [SerializeField] float catchPitch = 26f;
+    [SerializeField] Vector2 catchViewport = new Vector2(0.56f, 0.46f);
+    [SerializeField] float catchBlendDuration = 0.62f;
+    [SerializeField] float catchRestoreDuration = 0.52f;
+
     InputAction lookAction;
     InputAction zoomAction;
 
     float yaw;
     float pitch;
     float distance;
+    Vector2 viewport;
     float waterHeight;
     bool hasWaterHeight;
     Vector3 followVelocity;
@@ -51,6 +59,25 @@ public class PlayerOrbitCamera : MonoBehaviour
     LayerMask runtimeCollisionMask;
     Camera cam;
     PlayerFishing fishing;
+
+    Transform catchFocus;
+    bool catchFraming;
+    bool blending;
+    bool hasSavedOrbit;
+    float blendElapsed;
+    float blendDuration;
+    float blendFromYaw;
+    float blendFromPitch;
+    float blendFromDistance;
+    Vector2 blendFromViewport;
+    float blendToYaw;
+    float blendToPitch;
+    float blendToDistance;
+    Vector2 blendToViewport;
+    float savedYaw;
+    float savedPitch;
+    float savedDistance;
+    Vector2 savedViewport;
 
     public void SetTarget(Transform newTarget)
     {
@@ -101,16 +128,110 @@ public class PlayerOrbitCamera : MonoBehaviour
         if (!initialized)
             SnapToOrbit();
 
-        ApplyLookInput();
-        ApplyZoomInput();
+        TickOrbitBlend();
+        if (!catchFraming && !blending)
+        {
+            ApplyLookInput();
+            ApplyZoomInput();
+        }
 
-        Vector3 pivot = target.position + pivotOffset;
+        Vector3 pivot = FramingPivot();
         Vector3 desired = DesiredOrbitPosition(pivot);
         desired = ResolveCollisions(pivot, desired);
         desired = ClampAboveSurfaces(desired);
 
-        transform.position = Vector3.SmoothDamp(transform.position, desired, ref followVelocity, followSmoothTime);
-        AimFocusOnScreen(pivot, followViewport);
+        float smooth = catchFraming || blending ? Mathf.Max(0.16f, followSmoothTime) : followSmoothTime;
+        transform.position = Vector3.SmoothDamp(transform.position, desired, ref followVelocity, smooth);
+        AimFocusOnScreen(pivot, viewport);
+    }
+
+    public void BeginCatchFraming(Transform fish)
+    {
+        if (!initialized)
+            SnapToOrbit();
+
+        catchFocus = fish;
+        if (!catchFraming)
+        {
+            savedYaw = yaw;
+            savedPitch = pitch;
+            savedDistance = distance;
+            savedViewport = viewport;
+            hasSavedOrbit = true;
+        }
+
+        catchFraming = true;
+        float sizeBoost = 0f;
+        var agent = fish != null ? fish.GetComponent<FishAgent>() : null;
+        if (agent != null)
+            sizeBoost = Mathf.Lerp(0f, 0.55f, Mathf.InverseLerp(0.6f, 8f, agent.Size.Pounds));
+
+        BeginBlend(
+            yaw, pitch, distance, viewport,
+            yaw, catchPitch, catchDistance + sizeBoost, catchViewport,
+            catchBlendDuration);
+    }
+
+    public void EndCatchFraming()
+    {
+        catchFocus = null;
+        catchFraming = false;
+        if (!hasSavedOrbit)
+            return;
+
+        hasSavedOrbit = false;
+        BeginBlend(
+            yaw, pitch, distance, viewport,
+            savedYaw, savedPitch, savedDistance, savedViewport,
+            catchRestoreDuration);
+    }
+
+    void BeginBlend(
+        float fromYaw, float fromPitch, float fromDistance, Vector2 fromViewport,
+        float toYaw, float toPitch, float toDistance, Vector2 toViewport,
+        float duration)
+    {
+        blendFromYaw = fromYaw;
+        blendFromPitch = fromPitch;
+        blendFromDistance = fromDistance;
+        blendFromViewport = fromViewport;
+        blendToYaw = toYaw;
+        blendToPitch = toPitch;
+        blendToDistance = toDistance;
+        blendToViewport = toViewport;
+        blendDuration = Mathf.Max(0.05f, duration);
+        blendElapsed = 0f;
+        blending = true;
+    }
+
+    void TickOrbitBlend()
+    {
+        if (!blending)
+            return;
+
+        blendElapsed += Time.deltaTime;
+        float t = Mathf.Clamp01(blendElapsed / blendDuration);
+        t = t * t * (3f - 2f * t);
+        yaw = Mathf.LerpAngle(blendFromYaw, blendToYaw, t);
+        pitch = Mathf.Lerp(blendFromPitch, blendToPitch, t);
+        distance = Mathf.Lerp(blendFromDistance, blendToDistance, t);
+        viewport = Vector2.Lerp(blendFromViewport, blendToViewport, t);
+        if (blendElapsed < blendDuration)
+            return;
+
+        yaw = blendToYaw;
+        pitch = blendToPitch;
+        distance = blendToDistance;
+        viewport = blendToViewport;
+        blending = false;
+    }
+
+    Vector3 FramingPivot()
+    {
+        Vector3 playerPivot = target.position + pivotOffset;
+        if (!catchFraming || catchFocus == null)
+            return playerPivot;
+        return Vector3.Lerp(playerPivot, catchFocus.position, 0.46f);
     }
 
     void ApplyLookInput()
@@ -136,7 +257,7 @@ public class PlayerOrbitCamera : MonoBehaviour
         var keyboard = Keyboard.current;
         if (keyboard != null)
         {
-            if (fishing != null && fishing.IsFishing)
+            if (fishing != null && fishing.CapturesArrowKeys)
             {
                 if (keyboard.qKey.isPressed)
                     yaw -= keyboardYawSpeed * Time.deltaTime;
@@ -163,10 +284,13 @@ public class PlayerOrbitCamera : MonoBehaviour
     void ApplyZoomInput()
     {
         float scroll = 0f;
-        if (zoomAction != null)
-            scroll = zoomAction.ReadValue<Vector2>().y;
-        else if (Mouse.current != null)
-            scroll = Mouse.current.scroll.ReadValue().y;
+        if (!HudInput.PointerOverUi)
+        {
+            if (zoomAction != null)
+                scroll = zoomAction.ReadValue<Vector2>().y;
+            else if (Mouse.current != null)
+                scroll = Mouse.current.scroll.ReadValue().y;
+        }
 
         if (Mathf.Abs(scroll) > 0.01f)
             distance -= Mathf.Sign(scroll) * zoomStep;
@@ -242,12 +366,13 @@ public class PlayerOrbitCamera : MonoBehaviour
         yaw = target.eulerAngles.y;
         pitch = defaultPitch;
         distance = defaultDistance;
+        viewport = followViewport;
         followVelocity = Vector3.zero;
 
         Vector3 pivot = target.position + pivotOffset;
         Vector3 desired = ClampAboveSurfaces(ResolveCollisions(pivot, DesiredOrbitPosition(pivot)));
         transform.position = desired;
-        AimFocusOnScreen(pivot, followViewport);
+        AimFocusOnScreen(pivot, viewport);
         initialized = true;
     }
 

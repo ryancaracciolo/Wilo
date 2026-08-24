@@ -1,0 +1,572 @@
+.hud-root {
+    flex-grow: 1;
+    font-size: 15px;
+    color: rgb(76, 61, 47);
+    -unity-font-style: bold;
+}
+
+.hud-top-left {
+    position: absolute;
+    left: 18px;
+    top: 16px;
+    flex-direction: row;
+}
+
+.hud-top-right {
+    position: absolute;
+    right: 18px;
+    top: 16px;
+}
+
+.hud-bottom {
+    position: absolute;
+    left: 18px;
+    right: 18px;
+    bottom: 16px;
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: space-between;
+}
+
+.hud-icon-button {
+    width: 58px;
+    height: 58px;
+    margin-right: 10px;
+    padding: 0;
+    border-radius: 29px;
+    border-width: 3px;
+    border-color: rgb(212, 180, 131);
+    background-color: rgb(255, 248, 236);
+    overflow: hidden;
+}
+
+.hud-icon-button:hover {
+    background-color: rgb(255, 252, 245);
+    scale: 1.04;
+}
+
+.hud-icon-button > .unity-button__text,
+.hud-lure-chip > .unity-button__text,
+.hud-lure-option > .unity-button__text {
+    display: none;
+}
+
+.hud-icon-glyph {
+    flex-grow: 1;
+    margin: 8px;
+}
+
+.hud-gadget {
+    width: 248px;
+    height: 248px;
+    padding: 8px;
+    border-radius: 22px;
+    border-width: 3px;
+    border-color: rgb(212, 180, 131);
+    background-color: rgb(255, 248, 236);
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.hud-tab-row {
+    flex-direction: row;
+    justify-content: center;
+    margin-bottom: 6px;
+    background-color: rgb(244, 226, 198);
+    border-radius: 14px;
+    padding: 3px;
+}
+
+.hud-tab {
+    flex-grow: 1;
+    height: 26px;
+    margin: 0 2px;
+    padding: 0;
+    border-radius: 11px;
+    border-width: 0;
+    background-color: rgba(0, 0, 0, 0);
+    color: rgb(122, 98, 74);
+    font-size: 13px;
+    -unity-font-style: bold;
+}
+
+.hud-tab--on {
+    background-color: rgb(78, 156, 148);
+    color: rgb(255, 248, 236);
+}
+
+.hud-map {
+    flex-grow: 1;
+    border-radius: 14px;
+    overflow: hidden;
+    background-color: rgb(91, 175, 190);
+}
+
+.hud-map-image {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    -unity-background-scale-mode: stretch-to-fill;
+}
+
+.hud-map-overlay {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 255, 0.004);
+}
+
+.hud-map-journal {
+    flex-direction: row;
+    width: 860px;
+    height: 540px;
+    padding: 16px;
+    border-radius: 24px;
+    border-width: 3px;
+    border-color: rgb(212, 180, 131);
+    background-color: rgb(255, 248, 236);
+}
+
+.hud-map-journal-map {
+    flex-grow: 1;
+    margin-right: 16px;
+    border-radius: 16px;
+    overflow: hidden;
+    min-width: 420px;
+    background-color: rgb(91, 175, 190);
+}
+
+.hud-map-journal-map > .hud-map {
+    height: 100%;
+}
+
+.hud-map-journal-detail {
+    width: 268px;
+    padding: 2px 4px 8px 4px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.hud-map-journal-detail > .hud-card-header {
+    flex-shrink: 0;
+}
+
+.hud-map-journal-detail > .hud-muted {
+    flex-shrink: 0;
+}
+
+.hud-mark-list {
+    flex-grow: 1;
+    min-height: 0;
+    margin-bottom: 8px;
+}
+
+.hud-mark-facts {
+    flex-shrink: 0;
+    padding-top: 8px;
+    border-top-width: 2px;
+    border-top-color: rgb(244, 226, 198);
+}
+
+.hud-mark-facts > .hud-title {
+    font-size: 18px;
+}
+
+.hud-mark-row {
+    flex-direction: row;
+    align-items: center;
+    height: 40px;
+    margin-bottom: 4px;
+    padding: 0 8px;
+    border-radius: 12px;
+    border-width: 0;
+    background-color: rgb(244, 226, 198);
+    color: rgb(76, 61, 47);
+    font-size: 13px;
+    -unity-font-style: bold;
+}
+
+.hud-mark-row--on {
+    background-color: rgb(78, 156, 148);
+    color: rgb(255, 248, 236);
+}
+
+.hud-mark-row > .hud-lure-swatch {
+    width: 16px;
+    height: 16px;
+    margin-right: 8px;
+    border-radius: 8px;
+    flex-shrink: 0;
+}
+
+.hud-mark-row > .hud-body {
+    margin-bottom: 0;
+    font-size: 12px;
+    -unity-font-style: bold;
+}
+
+.hud-mark-row--on > .hud-body {
+    color: rgb(255, 248, 236);
+}
+
+.hud-sonar-wrap {
+    flex-grow: 1;
+    overflow: hidden;
+}
+
+.hud-sonar {
+    flex-grow: 1;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.hud-sonar-depth {
+    position: absolute;
+    right: 14px;
+    bottom: 14px;
+    color: rgb(255, 248, 236);
+    font-size: 13px;
+}
+
+.hud-strip {
+    flex-direction: row;
+    align-items: center;
+    height: 52px;
+    padding: 0 16px;
+    border-radius: 26px;
+    border-width: 3px;
+    border-color: rgb(212, 180, 131);
+    background-color: rgb(255, 248, 236);
+}
+
+.hud-weather-glyph {
+    width: 28px;
+    height: 28px;
+    margin-right: 6px;
+}
+
+.hud-strip-label {
+    font-size: 14px;
+    color: rgb(76, 61, 47);
+    -unity-font-style: bold;
+    margin: 0 2px;
+}
+
+.hud-strip-date {
+    font-size: 13px;
+    color: rgb(138, 116, 96);
+    margin-left: 8px;
+}
+
+.hud-strip-dot {
+    width: 5px;
+    height: 5px;
+    margin: 0 8px;
+    border-radius: 3px;
+    background-color: rgb(212, 180, 131);
+}
+
+.hud-lure-chip {
+    flex-direction: row;
+    align-items: center;
+    height: 52px;
+    min-width: 108px;
+    margin-left: 12px;
+    padding: 0 14px 0 10px;
+    border-radius: 26px;
+    border-width: 3px;
+    border-color: rgb(212, 180, 131);
+    background-color: rgb(255, 248, 236);
+}
+
+.hud-lure-chip:hover {
+    background-color: rgb(255, 252, 245);
+}
+
+.hud-lure-swatch {
+    width: 22px;
+    height: 22px;
+    margin-right: 8px;
+    border-radius: 11px;
+    border-width: 2px;
+    border-color: rgb(76, 61, 47);
+}
+
+.hud-lure-name {
+    font-size: 14px;
+    -unity-font-style: bold;
+}
+
+.hud-modal {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(76, 61, 47, 0.28);
+    align-items: center;
+    justify-content: center;
+}
+
+.hud-card {
+    width: 420px;
+    max-height: 520px;
+    padding: 22px 24px 20px 24px;
+    border-radius: 24px;
+    border-width: 3px;
+    border-color: rgb(212, 180, 131);
+    background-color: rgb(255, 248, 236);
+}
+
+.hud-card-header {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.hud-title {
+    font-size: 22px;
+    color: rgb(76, 61, 47);
+    -unity-font-style: bold;
+}
+
+.hud-body {
+    font-size: 15px;
+    color: rgb(76, 61, 47);
+    -unity-font-style: bold;
+    margin-bottom: 4px;
+    white-space: normal;
+}
+
+.hud-muted {
+    font-size: 13px;
+    color: rgb(138, 116, 96);
+    -unity-font-style: bold;
+    margin-bottom: 10px;
+    white-space: normal;
+}
+
+.hud-close {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: 16px;
+    border-width: 2px;
+    border-color: rgb(212, 180, 131);
+    background-color: rgb(244, 226, 198);
+    font-size: 16px;
+}
+
+.hud-section {
+    margin-top: 8px;
+    margin-bottom: 6px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    background-color: rgb(244, 226, 198);
+}
+
+.hud-tourney-row {
+    margin-bottom: 10px;
+}
+
+.hud-text-button {
+    height: 32px;
+    margin-top: 8px;
+    padding: 0 14px;
+    border-radius: 16px;
+    border-width: 0;
+    background-color: rgb(255, 248, 236);
+    color: rgb(76, 61, 47);
+    font-size: 13px;
+    -unity-font-style: bold;
+}
+
+.hud-text-button--primary {
+    background-color: rgb(78, 156, 148);
+    color: rgb(255, 248, 236);
+}
+
+.hud-popover-catcher {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+}
+
+.hud-lure-popover {
+    position: absolute;
+    width: 280px;
+    padding: 12px;
+    border-radius: 18px;
+    border-width: 3px;
+    border-color: rgb(212, 180, 131);
+    background-color: rgb(255, 248, 236);
+}
+
+.hud-lure-option {
+    flex-direction: row;
+    align-items: center;
+    height: 44px;
+    margin-bottom: 6px;
+    padding: 0 10px;
+    border-radius: 12px;
+    border-width: 0;
+    background-color: rgb(244, 226, 198);
+}
+
+.hud-lure-option--on {
+    background-color: rgb(78, 156, 148);
+    color: rgb(255, 248, 236);
+}
+
+.hud-row {
+    flex-direction: row;
+    align-items: center;
+}
+
+.hud-catch-toast {
+    position: absolute;
+    left: 50%;
+    top: 18%;
+    translate: -50% 0;
+    padding: 12px 22px;
+    border-radius: 18px;
+    border-width: 3px;
+    border-color: rgb(212, 180, 131);
+    background-color: rgb(255, 248, 236);
+    font-size: 20px;
+    color: rgb(76, 61, 47);
+    -unity-font-style: bold;
+}
+
+.hud-catch-sheet {
+    position: absolute;
+    left: 22px;
+    top: 92px;
+    width: 292px;
+    padding: 18px 20px 16px 20px;
+    border-radius: 22px;
+    border-width: 3px;
+    border-color: rgb(212, 180, 131);
+    background-color: rgb(255, 248, 236);
+}
+
+.hud-catch-catcher {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+}
+
+.hud-catch-size {
+    font-size: 18px;
+    margin-bottom: 10px;
+}
+
+.hud-catch-lure {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.hud-catch-lure > .hud-body {
+    margin-bottom: 0;
+}
+
+.hud-catch-actions {
+    flex-direction: row;
+    margin-top: 6px;
+}
+
+.hud-catch-actions > .hud-text-button {
+    flex-grow: 1;
+    margin-top: 8px;
+    margin-right: 8px;
+}
+
+.hud-catch-actions > .hud-text-button:last-child {
+    margin-right: 0;
+}
+
+.hud-fight {
+    position: absolute;
+    right: 22px;
+    top: 278px;
+    width: 92px;
+    height: 340px;
+    flex-direction: column;
+    padding: 10px 8px 22px 8px;
+    border-radius: 22px;
+    border-width: 3px;
+    border-color: rgb(212, 180, 131);
+    background-color: rgb(255, 248, 236);
+}
+
+.hud-fight-row {
+    flex-grow: 1;
+    flex-direction: row;
+    align-items: stretch;
+}
+
+.hud-fight-meter {
+    width: 12px;
+    margin-right: 8px;
+    border-radius: 8px;
+    background-color: rgb(244, 226, 198);
+    overflow: hidden;
+}
+
+.hud-fight-fill {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border-radius: 8px;
+    background-color: rgb(107, 199, 122);
+}
+
+.hud-fight-fill--hot {
+    background-color: rgb(140, 219, 102);
+}
+
+.hud-fight-track {
+    flex-grow: 1;
+    border-radius: 16px;
+    background-color: rgb(126, 196, 206);
+    overflow: hidden;
+}
+
+.hud-fight-bar {
+    position: absolute;
+    left: 5px;
+    right: 5px;
+    border-radius: 12px;
+    border-width: 2px;
+    border-color: rgb(212, 180, 131);
+    background-color: rgba(255, 248, 236, 0.78);
+}
+
+.hud-fight-fish {
+    position: absolute;
+    left: 4px;
+    right: 4px;
+}
+
+.hud-fight-hint {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 4px;
+    height: 16px;
+    font-size: 11px;
+    color: rgb(138, 116, 96);
+    -unity-text-align: middle-center;
+    -unity-font-style: bold;
+}

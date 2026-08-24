@@ -36,6 +36,8 @@ public class BoatMotor : MonoBehaviour
 
     public bool IsOccupied => occupied;
     public Transform Seat => seat;
+    public float Speed => currentSpeed;
+    public float WaterHeight => hasWaterHeight ? waterHeight : transform.position.y;
     public bool ControlsLocked
     {
         get => controlsLocked;
@@ -75,7 +77,7 @@ public class BoatMotor : MonoBehaviour
     void Update()
     {
         SnapToWater();
-        if (!occupied || controlsLocked)
+        if (!occupied || controlsLocked || HudInput.PopupOpen)
             return;
 
         Vector2 input = moveAction != null ? moveAction.ReadValue<Vector2>() : Vector2.zero;
