@@ -81,6 +81,8 @@ public class GameHud : MonoBehaviour
             fishing.Escaped -= ShowEscape;
         HudInput.PointerOverUi = false;
         HudInput.PopupOpen = false;
+        HudInput.Root = null;
+        HudInput.Panel = null;
         shownCatch = null;
         built = false;
     }
@@ -105,7 +107,9 @@ public class GameHud : MonoBehaviour
         if (!built)
             return;
 
-        HudInput.PointerOverUi = PointerOverInteractiveElement();
+        HudInput.Root = root;
+        HudInput.Panel = root?.panel;
+        HudInput.PointerOverUi = HudInput.IsPointerOverUi();
         strip.Refresh(conditions);
         mapSonar.SetSonarAvailable(conditions.OnBoat);
         mapSonar.Tick(conditions, Time.deltaTime);
@@ -153,6 +157,8 @@ public class GameHud : MonoBehaviour
         root.Clear();
         root.AddToClassList("hud-root");
         root.pickingMode = PickingMode.Ignore;
+        HudInput.Root = root;
+        HudInput.Panel = root.panel;
         if (styleSheet != null && !root.styleSheets.Contains(styleSheet))
             root.styleSheets.Add(styleSheet);
 
@@ -231,6 +237,7 @@ public class GameHud : MonoBehaviour
     {
         mapJournalLayer = new VisualElement();
         mapJournalLayer.AddToClassList("hud-modal");
+        mapJournalLayer.pickingMode = PickingMode.Ignore;
         mapJournalLayer.style.display = DisplayStyle.None;
         mapJournalLayer.RegisterCallback<ClickEvent>(OnJournalBackgroundClicked);
 
@@ -569,7 +576,10 @@ public class GameHud : MonoBehaviour
         if (modalLayer != null)
             modalLayer.style.display = DisplayStyle.None;
         if (mapJournalLayer != null)
+        {
             mapJournalLayer.style.display = DisplayStyle.None;
+            mapJournalLayer.pickingMode = PickingMode.Ignore;
+        }
         if (!CatchSheetOpen)
             HudInput.PopupOpen = false;
     }
@@ -620,7 +630,7 @@ public class GameHud : MonoBehaviour
             return;
 
         fishing?.CancelCastClick();
-        if (fishing != null && fishing.IsFishing)
+        if (fishing != null && fishing.Fight != null && fishing.Fight.Playing)
             return;
 
         CloseLurePicker();
@@ -628,6 +638,7 @@ public class GameHud : MonoBehaviour
             modalLayer.style.display = DisplayStyle.None;
 
         RefreshMapMarks();
+        mapJournalLayer.pickingMode = PickingMode.Position;
         mapJournalLayer.style.display = DisplayStyle.Flex;
         mapJournalLayer.BringToFront();
         journalMap?.ResetView();
@@ -789,16 +800,5 @@ public class GameHud : MonoBehaviour
         if (record.WaterTempF > 1f)
             facts.Add(HudUi.Body($"{record.WaterTempF:0}° water"));
         parent.Add(facts);
-    }
-
-    bool PointerOverInteractiveElement()
-    {
-        if (root?.panel == null || Mouse.current == null)
-            return false;
-
-        Vector2 mouse = Mouse.current.position.ReadValue();
-        Vector2 panelPos = RuntimePanelUtils.ScreenToPanel(root.panel, mouse);
-        VisualElement picked = root.panel.Pick(panelPos);
-        return picked != null && picked != root;
     }
 }

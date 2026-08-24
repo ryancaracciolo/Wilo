@@ -49,6 +49,7 @@ public class PlayerFishing : MonoBehaviour
 
     public void CancelCastClick()
     {
+        ignoreCastFrame = Time.frameCount;
         if (phase == Phase.Aiming)
             CancelAim();
     }

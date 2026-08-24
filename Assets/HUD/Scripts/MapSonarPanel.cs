@@ -47,6 +47,8 @@ public class MapSonarPanel : VisualElement
 
         var sonarWrap = new VisualElement();
         sonarWrap.AddToClassList("hud-sonar-wrap");
+        sonarWrap.pickingMode = PickingMode.Position;
+        sonarWrap.RegisterCallback<ClickEvent>(OnSonarClicked);
         sonarWrap.Add(sonar);
         sonarWrap.Add(sonarDepth);
 
@@ -115,6 +117,12 @@ public class MapSonarPanel : VisualElement
         sonar.parent.style.display = mapOn ? DisplayStyle.None : DisplayStyle.Flex;
         mapTab.EnableInClassList("hud-tab--on", mapOn);
         sonarTab.EnableInClassList("hud-tab--on", !mapOn);
+    }
+
+    void OnSonarClicked(ClickEvent evt)
+    {
+        ExpandRequested?.Invoke();
+        evt.StopPropagation();
     }
 
     static Button MakeTab(string label, System.Action click)

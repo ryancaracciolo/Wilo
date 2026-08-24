@@ -47,7 +47,7 @@ public class LakeMapElement : VisualElement
 
         overlay = new VisualElement();
         overlay.AddToClassList("hud-map-overlay");
-        overlay.pickingMode = PickingMode.Ignore;
+        overlay.pickingMode = PickingMode.Position;
         overlay.generateVisualContent += DrawOverlay;
         Add(overlay);
     }
@@ -176,7 +176,13 @@ public class LakeMapElement : VisualElement
 
     void OnPointerDown(PointerDownEvent evt)
     {
-        if (!panZoom || evt.button != 0)
+        if (evt.button != 0)
+            return;
+
+        HudInput.PointerOverUi = true;
+        evt.StopPropagation();
+
+        if (!panZoom)
             return;
 
         dragging = true;
@@ -184,7 +190,6 @@ public class LakeMapElement : VisualElement
         dragPointer = evt.pointerId;
         dragStart = (Vector2)evt.localPosition;
         dragCenter = viewCenter;
-        evt.StopPropagation();
     }
 
     void OnPointerMove(PointerMoveEvent evt)

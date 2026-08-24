@@ -284,7 +284,7 @@ public class PlayerOrbitCamera : MonoBehaviour
     void ApplyZoomInput()
     {
         float scroll = 0f;
-        if (!HudInput.PointerOverUi)
+        if (!HudInput.BlocksWorldClick)
         {
             if (zoomAction != null)
                 scroll = zoomAction.ReadValue<Vector2>().y;
