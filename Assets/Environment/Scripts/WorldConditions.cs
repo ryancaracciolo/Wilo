@@ -49,7 +49,7 @@ public class WorldConditions : MonoBehaviour
     float waterHeight;
     bool hasWaterHeight;
     float waterVisibility = 10.4f;
-    GameCalendar calendar;
+    IClockSource clock;
     bool live;
 
     public WeatherKind Weather => weather;
@@ -74,12 +74,28 @@ public class WorldConditions : MonoBehaviour
     public bool IsNight => Clock.IsNight;
 
     /// <summary>Set every frame by the HUD so open panels do not burn fishing time.</summary>
-    public bool HoldClock { get; set; }
+    public bool HoldClock
+    {
+        get => clock != null && clock.Hold;
+        set
+        {
+            if (clock != null)
+                clock.Hold = value;
+        }
+    }
 
     /// <summary>The calendar itself, for systems that need to look at other days.</summary>
     public GameCalendar Calendar => Clock;
 
-    GameCalendar Clock => live ? calendar : PreviewClock();
+    /// <summary>Swaps where time comes from. A shared session installs its own source here.</summary>
+    public void SetClockSource(IClockSource source)
+    {
+        if (source == null)
+            return;
+        clock = source;
+    }
+
+    GameCalendar Clock => live && clock != null ? clock.Calendar : PreviewClock();
     public float GameplayDepthScale => gameplayDepthScale > 0.05f ? gameplayDepthScale : 0.5f;
     public float DepthFeet { get; private set; }
     public float BoatSpeedMph { get; private set; }
@@ -150,9 +166,11 @@ public class WorldConditions : MonoBehaviour
             return 0;
         }
 
-        int days = calendar.AdvanceToHour(hour);
+        GameCalendar next = clock.Calendar;
+        int days = next.AdvanceToHour(hour);
+        clock.Set(next);
         if (days > 0)
-            DayChanged?.Invoke(calendar.DayIndex);
+            DayChanged?.Invoke(next.DayIndex);
         return days;
     }
 
@@ -164,7 +182,9 @@ public class WorldConditions : MonoBehaviour
             return;
         }
 
-        calendar.SetHour(hour);
+        GameCalendar next = clock.Calendar;
+        next.SetHour(hour);
+        clock.Set(next);
     }
 
     public void AdvanceDays(int days, float wakeHour = 6.5f)
@@ -180,10 +200,12 @@ public class WorldConditions : MonoBehaviour
             return;
         }
 
-        int from = calendar.DayIndex;
-        calendar.AdvanceDays(days, wakeHour);
-        if (calendar.DayIndex != from)
-            DayChanged?.Invoke(calendar.DayIndex);
+        GameCalendar moved = clock.Calendar;
+        int from = moved.DayIndex;
+        moved.AdvanceDays(days, wakeHour);
+        clock.Set(moved);
+        if (moved.DayIndex != from)
+            DayChanged?.Invoke(moved.DayIndex);
     }
 
     [ContextMenu("Time/Dawn")]
@@ -217,8 +239,34 @@ public class WorldConditions : MonoBehaviour
 
     void Awake()
     {
-        calendar = PreviewClock();
+        clock = new LocalClockSource(PreviewClock());
         live = true;
+        ApplyFrom(SaveService.Instance);
+    }
+
+    void ApplyFrom(SaveService save)
+    {
+        if (save == null || save.IsNewGame)
+            return;
+
+        ClockData stored = save.Lake.clock;
+        clock.Set(new GameCalendar
+        {
+            DayIndex = stored.dayIndex,
+            MinutesInDay = stored.minutesInDay,
+            EpochWeekday = (DayOfWeek)stored.epochWeekday
+        });
+    }
+
+    public void CaptureTo(LakeSave save)
+    {
+        if (save == null || clock == null)
+            return;
+
+        GameCalendar now = clock.Calendar;
+        save.clock.dayIndex = now.DayIndex;
+        save.clock.minutesInDay = now.MinutesInDay;
+        save.clock.epochWeekday = (int)now.EpochWeekday;
     }
 
     void Start()
@@ -230,12 +278,10 @@ public class WorldConditions : MonoBehaviour
 
     void Update()
     {
-        if (!HoldClock)
-        {
-            int wrapped = calendar.Tick(Time.deltaTime, RealMinutesPerDay);
-            if (wrapped > 0)
-                DayChanged?.Invoke(calendar.DayIndex);
-        }
+        // Holding is the source's business now, so a session clock can refuse to.
+        int wrapped = clock.Tick(Time.deltaTime, RealMinutesPerDay);
+        if (wrapped > 0)
+            DayChanged?.Invoke(clock.Calendar.DayIndex);
 
         if (player == null)
             FindPlayer();

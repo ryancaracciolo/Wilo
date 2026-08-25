@@ -15,6 +15,9 @@ public static class HudInput
     public static bool PopupOpen { get; set; }
     public static bool PointerOverUi { get; private set; }
 
+    /// <summary>True while a HUD text field holds keyboard focus.</summary>
+    public static bool Typing { get; set; }
+
     static bool pressedOnHud;
     static int hudPressFrame = -1;
 
@@ -22,6 +25,13 @@ public static class HudInput
     public static bool AteWorldClick => pressedOnHud || Time.frameCount <= hudPressFrame;
 
     public static bool BlocksWorldClick => PopupOpen || AteWorldClick || PointerOverUi;
+
+    /// <summary>
+    /// Keyboard shortcuts read this. Unlike clicks, keys never route through the
+    /// HUD, so a letter typed into a name field would otherwise also cast a lure
+    /// or swing the camera.
+    /// </summary>
+    public static bool BlocksWorldKeys => PopupOpen || Typing;
 
     public static void NotifyUiPointerDown()
     {
@@ -47,6 +57,7 @@ public static class HudInput
     public static void Reset()
     {
         PopupOpen = false;
+        Typing = false;
         PointerOverUi = false;
         pressedOnHud = false;
         hudPressFrame = -1;

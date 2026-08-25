@@ -58,6 +58,8 @@ public class DayCycle : MonoBehaviour
     Transform dock;
     PlayerFishing fishing;
     PlayerBoatInteractor boatInteractor;
+    PlayerProgress progress;
+    TournamentDirector director;
     BoatMotor boat;
     Vector3 homePosition;
     Quaternion homeRotation;
@@ -65,6 +67,7 @@ public class DayCycle : MonoBehaviour
     Quaternion mooringRotation;
     bool hasHome;
     bool warned;
+    bool continueRequested;
 
     /// <summary>Transient banner text, such as the curfew warning.</summary>
     public event Action<string> Notice;
@@ -78,9 +81,18 @@ public class DayCycle : MonoBehaviour
     /// <summary>Target alpha and duration for the HUD blackout.</summary>
     public event Action<float, float> FadeRequested;
 
+    /// <summary>
+    /// The day's highlights, raised over the blackout. If anything is listening,
+    /// the night waits on <see cref="ContinueToNextDay"/> before the clock moves.
+    /// </summary>
+    public event Action<DaySummary> DayEnded;
+
     public event Action<DayReport> Morning;
 
     public bool IsTurningIn { get; private set; }
+
+    /// <summary>True while the highlights page is up and the night is paused.</summary>
+    public bool AwaitingContinue { get; private set; }
     public float CurfewHour => conditions != null ? conditions.DuskHour + curfewAfterDuskHours : 21f;
     public float WarningHour => CurfewHour - Mathf.Max(0.25f, warningLeadHours);
     public float WakeHour => conditions != null
@@ -144,15 +156,56 @@ public class DayCycle : MonoBehaviour
         StartCoroutine(TurnInRoutine(forced));
     }
 
+    /// <summary>Dismisses the highlights page and lets the next day begin.</summary>
+    public void ContinueToNextDay()
+    {
+        continueRequested = true;
+    }
+
+    DaySummary BuildSummary(bool forced)
+    {
+        var summary = new DaySummary
+        {
+            DayIndex = conditions != null ? conditions.DayIndex : 0,
+            Forced = forced,
+            DateLabel = conditions != null ? conditions.DateLabel : "",
+            SeasonLabel = conditions != null ? conditions.SeasonLabel : "",
+            WeatherLabel = conditions != null ? conditions.WeatherLabel : ""
+        };
+
+        summary.Collect(
+            progress != null ? progress.Catches : null,
+            director != null ? director.History : null);
+        return summary;
+    }
+
     IEnumerator TurnInRoutine(bool forced)
     {
         IsTurningIn = true;
         FadeRequested?.Invoke(1f, fadeDuration);
         yield return new WaitForSecondsRealtime(fadeDuration);
 
+        // Tournaments settle first so tonight's results land in the summary.
         BeforeTurnIn?.Invoke();
+
+        // Highlights are read off today's clock, so they run before it moves.
+        if (DayEnded != null)
+        {
+            continueRequested = false;
+            AwaitingContinue = true;
+            DayEnded.Invoke(BuildSummary(forced));
+            while (!continueRequested)
+                yield return null;
+            AwaitingContinue = false;
+        }
+
         ReturnHome();
         conditions?.AdvanceToHour(WakeHour);
+
+        // Sleeping is the save point, and the screen is already black for it.
+        if (SaveService.Instance != null)
+            SaveService.Instance.Save();
+
         yield return new WaitForSecondsRealtime(heldBlackSeconds);
 
         var report = new DayReport(
@@ -199,8 +252,11 @@ public class DayCycle : MonoBehaviour
             player = go.transform;
             fishing = go.GetComponent<PlayerFishing>();
             boatInteractor = go.GetComponent<PlayerBoatInteractor>();
+            progress = go.GetComponent<PlayerProgress>();
         }
 
+        if (director == null)
+            director = FindFirstObjectByType<TournamentDirector>();
         if (boat == null)
             boat = FindFirstObjectByType<BoatMotor>();
         if (dock == null && !string.IsNullOrEmpty(dockObjectName))

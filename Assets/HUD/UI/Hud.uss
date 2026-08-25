@@ -391,6 +391,40 @@
     color: rgb(255, 248, 236);
 }
 
+.hud-name-field {
+    margin: 6px 0 2px 0;
+}
+
+.hud-name-field .unity-base-text-field__input {
+    height: 38px;
+    padding: 0 12px;
+    border-radius: 14px;
+    border-width: 2px;
+    border-color: rgb(212, 180, 131);
+    background-color: rgb(255, 248, 236);
+    color: rgb(76, 61, 47);
+    font-size: 15px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-left;
+}
+
+.hud-name-field .unity-base-text-field__input:focus {
+    border-color: rgb(78, 156, 148);
+}
+
+.hud-form-actions {
+    flex-direction: row;
+    margin-top: 6px;
+    /* UI Toolkit has no :last-child, so the row absorbs the trailing gutter. */
+    margin-right: -8px;
+}
+
+.hud-form-actions > .hud-text-button {
+    flex-grow: 1;
+    margin-top: 8px;
+    margin-right: 8px;
+}
+
 .hud-popover-catcher {
     position: absolute;
     left: 0;
@@ -514,6 +548,31 @@
     background-color: rgb(12, 10, 16);
 }
 
+.hud-summary {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    align-items: center;
+    justify-content: center;
+}
+
+.hud-summary-card {
+    width: 440px;
+    max-height: 620px;
+    padding: 26px 26px 22px 26px;
+    border-radius: 26px;
+    border-width: 3px;
+    border-color: rgb(224, 178, 96);
+    background-color: rgb(255, 248, 236);
+}
+
+.hud-summary-card > .hud-row {
+    justify-content: center;
+    margin-top: 6px;
+}
+
 .hud-catch-sheet {
     position: absolute;
     left: 22px;
@@ -552,16 +611,14 @@
 .hud-catch-actions {
     flex-direction: row;
     margin-top: 6px;
+    /* UI Toolkit has no :last-child, so the row absorbs the trailing gutter. */
+    margin-right: -8px;
 }
 
 .hud-catch-actions > .hud-text-button {
     flex-grow: 1;
     margin-top: 8px;
     margin-right: 8px;
-}
-
-.hud-catch-actions > .hud-text-button:last-child {
-    margin-right: 0;
 }
 
 .hud-fight {

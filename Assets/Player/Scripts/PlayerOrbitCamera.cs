@@ -255,7 +255,7 @@ public class PlayerOrbitCamera : MonoBehaviour
         }
 
         var keyboard = Keyboard.current;
-        if (keyboard != null)
+        if (keyboard != null && !HudInput.BlocksWorldKeys)
         {
             if (fishing != null && fishing.CapturesArrowKeys)
             {
@@ -296,7 +296,7 @@ public class PlayerOrbitCamera : MonoBehaviour
             distance -= Mathf.Sign(scroll) * zoomStep;
 
         var keyboard = Keyboard.current;
-        if (keyboard != null)
+        if (keyboard != null && !HudInput.BlocksWorldKeys)
         {
             if (keyboard.minusKey.wasPressedThisFrame)
                 distance += zoomStep;

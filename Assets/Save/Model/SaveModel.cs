@@ -41,7 +41,8 @@ public class PlayerSave
     /// <summary>Minted locally on first launch. Works offline and is what a friend would invite.</summary>
     public string playerId = "";
 
-    public string displayName = "You";
+    /// <summary>Blank means the player has not signed a tournament sheet yet.</summary>
+    public string displayName = "";
     public int money;
     public string bestSpecies = "";
     public float bestBassPounds;

@@ -6,8 +6,8 @@ using UnityEngine;
 /// Activates habitat cells around the player/boat and returns fish to a
 /// pool once those cells leave a despawn buffer. Fast travel just swaps
 /// the active set; skipped cells never spawn.
-/// Spawn rolls use a session seed so a new play draws a fresh sample
-/// from habitat; the same cell keeps that sample if you leave and return.
+/// Spawn rolls come from the lake's saved world seed, so a cell keeps its
+/// sample whether you leave and return or quit and come back tomorrow.
 /// </summary>
 [RequireComponent(typeof(LakeSimulation))]
 public class LocalFishPopulation : MonoBehaviour
@@ -42,7 +42,7 @@ public class LocalFishPopulation : MonoBehaviour
     Vector3 lastOrigin;
     float nextUpdateTime;
     int liveCount;
-    int sessionSeed;
+    int worldSeed;
 
     void Awake()
     {
@@ -50,9 +50,51 @@ public class LocalFishPopulation : MonoBehaviour
             lake = GetComponent<LakeSimulation>();
         poolRoot = new GameObject("FishPool").transform;
         poolRoot.SetParent(transform, false);
-        sessionSeed = UnityEngine.Random.Range(int.MinValue, int.MaxValue);
-        if (sessionSeed == int.MinValue)
-            sessionSeed = 1;
+        ApplyFrom(SaveService.Instance);
+    }
+
+    /// <summary>
+    /// The seed is the lake's identity: the same seed must always draw the same
+    /// fish from the same cell. That is what makes the lake continuous across
+    /// sessions, and what would later let two players fish one lake without
+    /// sending a single fish over the wire.
+    /// </summary>
+    void ApplyFrom(SaveService save)
+    {
+        if (save == null)
+        {
+            // No service in this scene (a test bed, say). Fall back to a one-off lake.
+            worldSeed = UnityEngine.Random.Range(1, int.MaxValue);
+            return;
+        }
+
+        worldSeed = save.Lake.worldSeed;
+
+        harvested.Clear();
+        List<HarvestedCell> cells = save.Lake.harvested;
+        for (int i = 0; i < cells.Count; i++)
+            harvested[new LakeCellId(cells[i].x, cells[i].z)] = cells[i].count;
+    }
+
+    public void CaptureTo(LakeSave save)
+    {
+        if (save == null)
+            return;
+
+        save.worldSeed = worldSeed;
+        save.harvested.Clear();
+        foreach (KeyValuePair<LakeCellId, int> pair in harvested)
+        {
+            if (pair.Value <= 0)
+                continue;
+
+            save.harvested.Add(new HarvestedCell
+            {
+                x = pair.Key.X,
+                z = pair.Key.Z,
+                count = pair.Value
+            });
+        }
     }
 
     void Start()
@@ -548,7 +590,7 @@ public class LocalFishPopulation : MonoBehaviour
                 ^ (uint)(id.Z * 19349663)
                 ^ (uint)(salt * 83492791)
                 ^ (uint)(taken * 374761393)
-                ^ (uint)(sessionSeed * 1103515245);
+                ^ (uint)(worldSeed * 1103515245);
 
             // Callers read low bits (PointInCell, yaw), and an XOR of products
             // leaves those marching in step across the grid. Avalanche first.

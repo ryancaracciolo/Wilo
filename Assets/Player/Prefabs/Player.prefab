@@ -169,7 +169,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: bb8acd9cd368c4dbc9dc3aa04ac82eb3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerProgress
-  displayName: You
+  displayName: 
   money: 250
   bestSpecies: Largemouth
   bestBassPounds: 0

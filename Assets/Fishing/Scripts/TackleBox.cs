@@ -18,10 +18,55 @@ public class TackleBox : MonoBehaviour
 
     void Awake()
     {
+        ApplyFrom(SaveService.Instance);
         if (lures.Count == 0)
             AddStarterLures();
         if (equipped == null && lures.Count > 0)
             equipped = lures[0];
+    }
+
+    void ApplyFrom(SaveService save)
+    {
+        if (save == null || save.IsNewGame)
+            return;
+
+        ContentRegistry registry = ContentRegistry.Instance;
+        if (registry == null)
+            return;
+
+        TackleData data = save.Player.tackle;
+        lures.Clear();
+        for (int i = 0; i < data.ownedLureIds.Count; i++)
+        {
+            string id = data.ownedLureIds[i];
+            LureDefinition lure = registry.Lure(id);
+            if (lure == null)
+            {
+                Debug.LogWarning($"TackleBox: saved lure '{id}' is not in the ContentRegistry and was dropped.", this);
+                continue;
+            }
+
+            if (!lures.Contains(lure))
+                lures.Add(lure);
+        }
+
+        equipped = registry.Lure(data.equippedLureId);
+    }
+
+    public void CaptureTo(PlayerSave save)
+    {
+        if (save == null)
+            return;
+
+        TackleData data = save.tackle;
+        data.ownedLureIds.Clear();
+        for (int i = 0; i < lures.Count; i++)
+        {
+            if (lures[i] != null && !string.IsNullOrEmpty(lures[i].Id))
+                data.ownedLureIds.Add(lures[i].Id);
+        }
+
+        data.equippedLureId = equipped != null ? equipped.Id : "";
     }
 
     public void Equip(LureDefinition lure)

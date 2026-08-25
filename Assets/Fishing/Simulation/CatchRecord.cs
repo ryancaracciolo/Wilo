@@ -17,6 +17,9 @@ public class CatchRecord
     public Color LureColor;
     public Vector3 WorldPosition;
     public float DepthFeet;
+
+    /// <summary>Calendar day this fish was landed on, so a day can be totalled up.</summary>
+    public int DayIndex;
     public float Hour;
     public string TimeLabel;
     public string WeatherLabel;

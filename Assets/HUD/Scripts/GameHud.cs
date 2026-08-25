@@ -36,6 +36,8 @@ public class GameHud : MonoBehaviour
     Label tourneyChip;
     VisualElement dockPrompt;
     VisualElement fadeLayer;
+    VisualElement summaryLayer;
+    VisualElement summaryCard;
     float noticeUntil;
     float fadeFrom;
     float fadeTarget;
@@ -86,6 +88,7 @@ public class GameHud : MonoBehaviour
         {
             dayCycle.Notice += ShowNotice;
             dayCycle.FadeRequested += RequestFade;
+            dayCycle.DayEnded += ShowDaySummary;
             dayCycle.Morning += ShowMorning;
         }
         if (director != null)
@@ -111,6 +114,7 @@ public class GameHud : MonoBehaviour
         {
             dayCycle.Notice -= ShowNotice;
             dayCycle.FadeRequested -= RequestFade;
+            dayCycle.DayEnded -= ShowDaySummary;
             dayCycle.Morning -= ShowMorning;
         }
         if (director != null)
@@ -165,6 +169,15 @@ public class GameHud : MonoBehaviour
         if (keyboard == null)
             return;
 
+        // The night's recap is the only thing that can be on screen; it has to be
+        // acknowledged, so both keys advance it and nothing else is reachable.
+        if (DaySummaryOpen)
+        {
+            if (keyboard.enterKey.wasPressedThisFrame || keyboard.escapeKey.wasPressedThisFrame)
+                ContinueToNextDay();
+            return;
+        }
+
         if (keyboard.escapeKey.wasPressedThisFrame)
         {
             if (CatchSheetOpen)
@@ -183,6 +196,11 @@ public class GameHud : MonoBehaviour
     void TickDayCycle()
     {
         bool turning = dayCycle != null && dayCycle.IsTurningIn;
+
+        // The recap belongs to the paused night. If the night resumed by any other
+        // route, drop the page rather than stranding the player behind it.
+        if (DaySummaryOpen && (dayCycle == null || !dayCycle.AwaitingContinue))
+            HideDaySummary();
         if (conditions != null)
             conditions.HoldClock = HudInput.PopupOpen || turning;
 
@@ -235,13 +253,90 @@ public class GameHud : MonoBehaviour
         noticeUntil = Time.unscaledTime + 4.5f;
     }
 
+    void ShowDaySummary(DaySummary summary)
+    {
+        if (summaryLayer == null || summary == null)
+            return;
+
+        CloseAllOverlays();
+        ContinueCatch();
+        summaryCard.Clear();
+
+        summaryCard.Add(HudUi.Muted(JoinFacts(summary.DateLabel, summary.SeasonLabel, summary.WeatherLabel)));
+        summaryCard.Add(HudUi.Title(summary.Headline));
+        if (summary.Forced)
+            summaryCard.Add(HudUi.Muted("You drifted home after dark."));
+
+        var day = new VisualElement();
+        day.AddToClassList("hud-section");
+        day.Add(HudUi.Muted("On the water"));
+        day.Add(HudUi.Body(summary.CatchLine));
+        if (!summary.Blanked)
+        {
+            day.Add(HudUi.Muted("Best fish"));
+            day.Add(HudUi.Body(summary.BestLine));
+        }
+        if (summary.TopLureFish > 0)
+        {
+            day.Add(HudUi.Muted("Best lure"));
+            day.Add(HudUi.Body(summary.LureLine));
+        }
+        summaryCard.Add(day);
+
+        if (summary.Tournaments.Count > 0)
+        {
+            var events = new VisualElement();
+            events.AddToClassList("hud-section");
+            events.Add(HudUi.Muted(summary.Tournaments.Count == 1 ? "Tournament" : "Tournaments"));
+            for (int i = 0; i < summary.Tournaments.Count; i++)
+            {
+                TournamentResult r = summary.Tournaments[i];
+                events.Add(HudUi.Body($"{r.DisplayName}  ·  {r.PlaceLabel}"));
+                events.Add(HudUi.Muted($"{r.Pounds:0.00} lb  ·  " +
+                    (r.Payout > 0 ? $"${r.Payout}" : "no payout")));
+            }
+
+            string earned = summary.EarnedLine;
+            if (!string.IsNullOrEmpty(earned))
+                events.Add(HudUi.Body(earned));
+            summaryCard.Add(events);
+        }
+
+        var actions = new VisualElement();
+        actions.AddToClassList("hud-row");
+        actions.Add(HudUi.TextButton("Continue", ContinueToNextDay, true));
+        summaryCard.Add(actions);
+
+        summaryLayer.style.display = DisplayStyle.Flex;
+        summaryLayer.BringToFront();
+        HudInput.PopupOpen = true;
+    }
+
+    bool DaySummaryOpen => summaryLayer != null && summaryLayer.style.display == DisplayStyle.Flex;
+
+    void ContinueToNextDay()
+    {
+        if (!DaySummaryOpen)
+            return;
+
+        dayCycle?.ContinueToNextDay();
+        HideDaySummary();
+    }
+
+    void HideDaySummary()
+    {
+        summaryLayer.style.display = DisplayStyle.None;
+        if (!CatchSheetOpen)
+            HudInput.PopupOpen = false;
+    }
+
     void ShowMorning(DayReport report)
     {
         string season = string.IsNullOrEmpty(report.SeasonLabel)
             ? ""
             : report.SeasonLabel.ToLowerInvariant();
-        string opener = report.Forced ? "You drifted home after dark." : "Good morning.";
-        ShowNotice(JoinFacts(opener, report.DateLabel, season));
+        // The recap already covered last night, so morning is just a greeting.
+        ShowNotice(JoinFacts("Good morning.", report.DateLabel, season));
     }
 
     void ResolvePlayerData()
@@ -365,6 +460,16 @@ public class GameHud : MonoBehaviour
         fadeLayer.style.display = DisplayStyle.None;
         fadeLayer.style.opacity = 0f;
         root.Add(fadeLayer);
+
+        // Added after the blackout so the night's recap reads over the top of it.
+        summaryLayer = new VisualElement();
+        summaryLayer.AddToClassList("hud-summary");
+        summaryLayer.style.display = DisplayStyle.None;
+        summaryCard = new VisualElement();
+        summaryCard.AddToClassList("hud-summary-card");
+        summaryCard.pickingMode = PickingMode.Position;
+        summaryLayer.Add(summaryCard);
+        root.Add(summaryLayer);
 
         RefreshLureChip();
         RefreshTournamentChip();
@@ -600,6 +705,8 @@ public class GameHud : MonoBehaviour
         string name = progress != null ? progress.DisplayName : "You";
         modalCard.Add(HudUi.Title(name));
         modalCard.Add(HudUi.Body(money));
+        if (progress != null)
+            modalCard.Add(HudUi.TextButton(progress.HasName ? "Change name" : "Set name", OpenRenameSheet));
 
         var pb = new VisualElement();
         pb.AddToClassList("hud-section");
@@ -708,8 +815,11 @@ public class GameHud : MonoBehaviour
         {
             row.Add(HudUi.TextButton(def.EntryFee > 0 ? $"Enter · ${def.EntryFee}" : "Enter", () =>
             {
-                director.Register(occurrence);
-                OpenTournaments();
+                // The board is where a name first matters, so that is where it is asked for.
+                if (progress != null && !progress.HasName)
+                    OpenSignUpSheet(occurrence);
+                else
+                    RegisterFor(occurrence);
             }, true));
         }
         else if (!director.AffordableFee(def))
@@ -718,6 +828,96 @@ public class GameHud : MonoBehaviour
         }
 
         return row;
+    }
+
+    void RegisterFor(TournamentOccurrence occurrence)
+    {
+        director.Register(occurrence);
+        // An entry fee has just left the wallet; don't make a crash refund it.
+        SaveService.Instance?.Save();
+        OpenTournaments();
+    }
+
+    void OpenSignUpSheet(TournamentOccurrence occurrence)
+    {
+        TournamentDefinition def = occurrence.Definition;
+        BuildNameCard(
+            "Sign-up sheet",
+            def != null
+                ? $"The {def.DisplayName} wants a name for the board."
+                : "The board wants a name.",
+            "",
+            def != null && def.EntryFee > 0 ? $"Sign in · ${def.EntryFee}" : "Sign in",
+            OpenTournaments,
+            () => RegisterFor(occurrence));
+    }
+
+    void OpenRenameSheet()
+    {
+        if (progress == null)
+            return;
+
+        BuildNameCard(
+            "Angler name",
+            "Tournament boards use this name.",
+            progress.HasName ? progress.DisplayName : "",
+            "Save",
+            OpenProfile,
+            () =>
+            {
+                SaveService.Instance?.Save();
+                OpenProfile();
+            });
+    }
+
+    /// <summary>Prompt, field, and a confirm that refuses a blank board entry.</summary>
+    void BuildNameCard(
+        string title,
+        string prompt,
+        string seed,
+        string confirmLabel,
+        System.Action back,
+        System.Action confirmed)
+    {
+        if (progress == null)
+            return;
+
+        CloseLurePicker();
+        modalCard.Clear();
+        AddCardHeader(title, back);
+        modalCard.Add(HudUi.Body(prompt));
+
+        var sheet = new VisualElement();
+        sheet.AddToClassList("hud-section");
+        sheet.Add(HudUi.Muted("Angler"));
+
+        var error = HudUi.Muted("Give the weigh-in something to read.");
+        error.style.display = DisplayStyle.None;
+
+        TextField field = null;
+        void Submit()
+        {
+            if (!progress.SetDisplayName(field.value))
+            {
+                error.style.display = DisplayStyle.Flex;
+                return;
+            }
+
+            confirmed();
+        }
+
+        field = HudUi.NameField(seed, PlayerProgress.MaxNameLength, Submit);
+        sheet.Add(field);
+        sheet.Add(error);
+        modalCard.Add(sheet);
+
+        var actions = new VisualElement();
+        actions.AddToClassList("hud-form-actions");
+        actions.Add(HudUi.TextButton("Back", back));
+        actions.Add(HudUi.TextButton(confirmLabel, Submit, true));
+        modalCard.Add(actions);
+
+        ShowModal();
     }
 
     void ShowTournamentResult(TournamentResult result)
@@ -844,6 +1044,10 @@ public class GameHud : MonoBehaviour
 
     void AddCardHeader(string title, System.Action close)
     {
+        // Every card rebuild runs through here, and the field it replaces may have
+        // been holding keyboard focus.
+        HudInput.Typing = false;
+
         var header = new VisualElement();
         header.AddToClassList("hud-card-header");
         header.Add(HudUi.Title(title));
@@ -870,6 +1074,7 @@ public class GameHud : MonoBehaviour
     void CloseAllOverlays()
     {
         CloseLurePicker();
+        HudInput.Typing = false;
         if (modalLayer != null)
             modalLayer.style.display = DisplayStyle.None;
         if (mapJournalLayer != null)

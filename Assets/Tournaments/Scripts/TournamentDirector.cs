@@ -96,10 +96,106 @@ public class TournamentDirector : MonoBehaviour
         }
     }
 
+    void Awake()
+    {
+        ApplyFrom(SaveService.Instance);
+    }
+
     void OnEnable()
     {
         Resolve();
         Subscribe();
+    }
+
+    /// <summary>
+    /// Restores entries, results, and a tournament that was still running when
+    /// the player quit, so coming back mid-event does not hand out a fresh bag.
+    /// </summary>
+    void ApplyFrom(SaveService save)
+    {
+        if (save == null || save.IsNewGame)
+            return;
+
+        TournamentData data = save.Player.tournaments;
+
+        registrations.Clear();
+        for (int i = 0; i < data.registrations.Count; i++)
+        {
+            TournamentRegistrationData entry = data.registrations[i];
+            TournamentDefinition def = FindDefinition(entry.definitionId);
+            if (def != null)
+                registrations.Add(new TournamentOccurrence(def, entry.dayIndex));
+        }
+
+        history.Clear();
+        for (int i = 0; i < data.history.Count; i++)
+        {
+            if (data.history[i] != null)
+                history.Add(data.history[i]);
+        }
+
+        Phase = (TournamentPhase)data.phase;
+        if (Phase == TournamentPhase.Idle)
+            return;
+
+        TournamentDefinition activeDef = FindDefinition(data.activeDefinitionId);
+        if (activeDef == null)
+        {
+            Phase = TournamentPhase.Idle;
+            return;
+        }
+
+        active = new TournamentOccurrence(activeDef, data.activeDayIndex);
+        bag.Reset(data.bagLimit);
+        for (int i = 0; i < data.bag.Count; i++)
+            bag.Consider(data.bag[i]);
+    }
+
+    public void CaptureTo(PlayerSave save)
+    {
+        if (save == null)
+            return;
+
+        TournamentData data = save.tournaments;
+
+        data.registrations.Clear();
+        for (int i = 0; i < registrations.Count; i++)
+        {
+            TournamentDefinition def = registrations[i].Definition;
+            if (def == null)
+                continue;
+
+            data.registrations.Add(new TournamentRegistrationData
+            {
+                definitionId = def.Id,
+                dayIndex = registrations[i].DayIndex
+            });
+        }
+
+        data.history.Clear();
+        data.history.AddRange(history);
+
+        data.phase = (int)Phase;
+        data.activeDefinitionId = active.Definition != null ? active.Definition.Id : "";
+        data.activeDayIndex = active.DayIndex;
+        data.bagLimit = bag.Limit;
+        data.bag.Clear();
+        data.bag.AddRange(bag.Kept);
+    }
+
+    TournamentDefinition FindDefinition(string id)
+    {
+        if (string.IsNullOrEmpty(id))
+            return null;
+
+        for (int i = 0; i < definitions.Count; i++)
+        {
+            if (definitions[i] != null && definitions[i].Id == id)
+                return definitions[i];
+        }
+
+        Debug.LogWarning($"Tournaments: saved event '{id}' is no longer on the schedule.", this);
+        return null;
     }
 
     void OnDisable()

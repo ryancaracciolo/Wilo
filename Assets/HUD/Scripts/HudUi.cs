@@ -55,6 +55,30 @@ public static class HudUi
         return label;
     }
 
+    /// <summary>
+    /// The only place the player types. While it holds focus it raises
+    /// HudInput.Typing so gameplay keys stand down, and Enter confirms.
+    /// </summary>
+    public static TextField NameField(string value, int maxLength, Action submit)
+    {
+        var field = new TextField { value = value, maxLength = maxLength, isDelayed = false };
+        field.AddToClassList("hud-name-field");
+        field.RegisterCallback<FocusInEvent>(_ => HudInput.Typing = true);
+        field.RegisterCallback<FocusOutEvent>(_ => HudInput.Typing = false);
+        field.RegisterCallback<DetachFromPanelEvent>(_ => HudInput.Typing = false);
+        field.RegisterCallback<KeyDownEvent>(evt =>
+        {
+            if (evt.keyCode != KeyCode.Return && evt.keyCode != KeyCode.KeypadEnter)
+                return;
+            evt.StopPropagation();
+            submit?.Invoke();
+        });
+
+        // The panel has to lay the field out before it can take focus.
+        field.schedule.Execute(() => field.Focus());
+        return field;
+    }
+
     public static VisualElement Row()
     {
         var row = new VisualElement();

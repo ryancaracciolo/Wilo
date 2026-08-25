@@ -184,9 +184,9 @@ public class PlayerFishing : MonoBehaviour
 
     bool WasCastPressed()
     {
-        // The key never routes through the HUD, so it stays live even while the
-        // pointer is busy up there.
-        if (Keyboard.current != null && Keyboard.current.cKey.wasPressedThisFrame)
+        // The key never routes through the HUD, so it stays live while the pointer
+        // is merely busy up there — but not while a panel or text field owns input.
+        if (!HudInput.BlocksWorldKeys && Keyboard.current != null && Keyboard.current.cKey.wasPressedThisFrame)
             return true;
 
         if (Time.frameCount <= ignoreCastFrame)
@@ -214,12 +214,14 @@ public class PlayerFishing : MonoBehaviour
     {
         if (IsCastHeld())
             return true;
-        return Keyboard.current != null && Keyboard.current.spaceKey.isPressed;
+        return !HudInput.Typing && Keyboard.current != null && Keyboard.current.spaceKey.isPressed;
     }
 
     bool IsCastHeld()
     {
-        if (Keyboard.current != null && Keyboard.current.cKey.isPressed)
+        // Held keys only stand down for text entry: a panel opened mid-cast or
+        // mid-fight should not drop the line the player is already working.
+        if (!HudInput.Typing && Keyboard.current != null && Keyboard.current.cKey.isPressed)
             return true;
         if (HudInput.AteWorldClick)
             return false;
@@ -599,6 +601,7 @@ public class PlayerFishing : MonoBehaviour
             LureColor = lure != null ? lure.Color : new Color(0.55f, 0.38f, 0.22f),
             WorldPosition = at,
             DepthFeet = spot.DepthFeet,
+            DayIndex = world != null ? world.DayIndex : 0,
             Hour = world != null ? world.Hour : 0f,
             TimeLabel = world != null ? world.TimeLabel : "",
             WeatherLabel = world != null ? world.WeatherLabel : "",
