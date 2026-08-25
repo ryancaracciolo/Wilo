@@ -103,11 +103,8 @@ public class LakeSimulation : MonoBehaviour
     public HabitatFeatures SampleFeatures(Vector3 world)
     {
         float geometric = GeometricDepthMeters(world);
-        float gameplay = conditions != null
-            ? conditions.ToGameplayDepth(geometric)
-            : geometric;
-        float feet = gameplay * 3.28084f;
-        float dropoff = MeasureDropoff(world, feet);
+        float feet = ToFeet(geometric);
+        float dropoff = MeasureDropoff(world, geometric, feet);
         float rock = 0f;
         float wood = 0f;
         float veg = 0f;
@@ -116,23 +113,29 @@ public class LakeSimulation : MonoBehaviour
         float extraVeg = profile != null ? profile.coverRadiusMeters : 9f;
         cover.Evaluate(world.x, world.z, extraRock, extraWood, extraVeg, out rock, out wood, out veg);
         float vegQuality = profile != null ? profile.SaturateVegetation(veg) : Mathf.Clamp01(veg);
-        return new HabitatFeatures(feet, dropoff, rock, wood, vegQuality);
+        float convexity = MeasureConvexity(world, geometric, feet);
+        return new HabitatFeatures(feet, dropoff, rock, wood, vegQuality, convexity);
     }
 
-    public bool TryNearestWood(Vector3 world, float maxDist, out Vector3 woodAt)
+    /// <summary>Nearest cover standing inside the square around <paramref name="center"/>.</summary>
+    public bool TryCoverInCell(Vector3 center, float halfSize, CoverKind kind, out Vector3 at)
     {
-        return TryNearestCover(world, CoverKind.Wood, maxDist, out woodAt);
-    }
-
-    public bool TryNearestCover(Vector3 world, CoverKind kind, float maxDist, out Vector3 at)
-    {
-        at = world;
+        at = center;
         float px;
         float pz;
-        if (!cover.TryClosest(world.x, world.z, kind, maxDist, out px, out pz))
+        if (!cover.TryClosestInRect(
+                center.x,
+                center.z,
+                center.x - halfSize,
+                center.z - halfSize,
+                center.x + halfSize,
+                center.z + halfSize,
+                kind,
+                out px,
+                out pz))
             return false;
 
-        at = new Vector3(px, world.y, pz);
+        at = new Vector3(px, center.y, pz);
         return true;
     }
 
@@ -154,13 +157,13 @@ public class LakeSimulation : MonoBehaviour
             landDepthMeters);
     }
 
-    float MeasureDropoff(Vector3 world, float centerFeet)
+    float MeasureDropoff(Vector3 world, float centerGeometric, float centerFeet)
     {
         float span = profile != null ? profile.dropoffSampleMeters : 8f;
         float strong = profile != null ? profile.dropoffStrongFeet : 5f;
         if (span < 0.5f || strong < 0.2f)
             return 0f;
-        if (GeometricDepthMeters(world) <= landDepthMeters)
+        if (centerGeometric <= landDepthMeters)
             return 0f;
 
         float maxDelta = 0f;
@@ -171,22 +174,59 @@ public class LakeSimulation : MonoBehaviour
         return Mathf.Clamp01(maxDelta / strong);
     }
 
+    /// <summary>
+    /// Compares this spot to a ring around it. Water that is deeper on most
+    /// sides means a point or shoal; shallower on most sides means a hole. A
+    /// straight wall cancels out, which is the distinction Dropoff cannot make.
+    /// </summary>
+    float MeasureConvexity(Vector3 world, float centerGeometric, float centerFeet)
+    {
+        float span = profile != null ? profile.pointSampleMeters : 18f;
+        float strong = profile != null ? profile.pointStrongFeet : 10f;
+        if (span < 1f || strong < 0.5f)
+            return 0f;
+        if (centerGeometric <= landDepthMeters)
+            return 0f;
+
+        float sum = 0f;
+        int n = 0;
+        AccumulateRing(world + Vector3.right * span, ref sum, ref n);
+        AccumulateRing(world - Vector3.right * span, ref sum, ref n);
+        AccumulateRing(world + Vector3.forward * span, ref sum, ref n);
+        AccumulateRing(world - Vector3.forward * span, ref sum, ref n);
+        if (n < 2)
+            return 0f;
+
+        return Mathf.Clamp((sum / n - centerFeet) / strong, -1f, 1f);
+    }
+
+    void AccumulateRing(Vector3 world, ref float sum, ref int n)
+    {
+        float geometric = GeometricDepthMeters(world);
+        if (geometric <= landDepthMeters)
+            return;
+
+        sum += ToFeet(geometric);
+        n++;
+    }
+
     float WetDepthDelta(Vector3 world, float centerFeet)
     {
-        if (GeometricDepthMeters(world) <= landDepthMeters)
+        float geometric = GeometricDepthMeters(world);
+        if (geometric <= landDepthMeters)
             return 0f;
-        float feet = GameplayFeet(world);
+
+        float feet = ToFeet(geometric);
         if (feet < 3f)
             return 0f;
         return Mathf.Abs(feet - centerFeet);
     }
 
-    float GameplayFeet(Vector3 world)
+    float ToFeet(float geometricMeters)
     {
-        float geometric = GeometricDepthMeters(world);
         float gameplay = conditions != null
-            ? conditions.ToGameplayDepth(geometric)
-            : geometric;
+            ? conditions.ToGameplayDepth(geometricMeters)
+            : geometricMeters;
         return gameplay * 3.28084f;
     }
 
@@ -201,7 +241,7 @@ public class LakeSimulation : MonoBehaviour
         for (int i = 0; i < roots.Length; i++)
             CollectCover(roots[i].transform, 0);
 
-        cover.Bake();
+        cover.Bake(profile != null ? profile.coverRadiusMeters : 9f);
     }
 
     void CollectCover(Transform t, int depth)

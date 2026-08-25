@@ -66,6 +66,21 @@ public class PlayerBoatInteractor : MonoBehaviour
         return false;
     }
 
+    /// <summary>Steps off wherever the player is. Used when the day ends away from the dock.</summary>
+    public void ForceDisembark()
+    {
+        if (occupiedBoat == null)
+            return;
+
+        occupiedBoat.SetOccupied(false);
+        transform.SetParent(null, true);
+        occupiedBoat = null;
+
+        if (controller != null)
+            controller.enabled = true;
+        motor.enabled = true;
+    }
+
     void TryBoard()
     {
         BoatMotor boat = FindClosestBoat(boardRange);

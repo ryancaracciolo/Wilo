@@ -12,6 +12,8 @@ GameObject:
   - component: {fileID: 42745160469277425}
   - component: {fileID: 2149750202510995225}
   - component: {fileID: 7401582758706921096}
+  - component: {fileID: 4200051298109634424}
+  - component: {fileID: 1022766614601347645}
   m_Layer: 0
   m_Name: GameHud
   m_TagString: Untagged
@@ -79,8 +81,7 @@ MonoBehaviour:
   startYear: 1
   startDayOfYear: 30
   startWeekday: 6
-  gameplayDepthScale: 0.5
-  upcoming: []
+  gameplayDepthScale: 0.4
 --- !u!114 &7401582758706921096
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -95,5 +96,47 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::GameHud
   styleSheet: {fileID: 7433441132597879392, guid: de101e0cba8944505ae19a96378d09e0, type: 3}
   conditions: {fileID: 2149750202510995225}
+  dayCycle: {fileID: 4200051298109634424}
+  director: {fileID: 1022766614601347645}
   progress: {fileID: 0}
   tackle: {fileID: 0}
+--- !u!114 &4200051298109634424
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7648616688364323623}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9692026b0930d4fe3946aecb6757530d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DayCycle
+  conditions: {fileID: 2149750202510995225}
+  curfewAfterDuskHours: 1
+  warningLeadHours: 1.5
+  wakeAfterDawnHours: 0
+  dockObjectName: EndPlatform
+  dockRadius: 11
+  homeAnchor: {fileID: 0}
+  fadeDuration: 0.8
+  heldBlackSeconds: 0.35
+--- !u!114 &1022766614601347645
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7648616688364323623}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2ee8e8d4d5fcb4b4bba437f3666c3496, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TournamentDirector
+  conditions: {fileID: 2149750202510995225}
+  dayCycle: {fileID: 4200051298109634424}
+  progress: {fileID: 0}
+  definitions:
+  - {fileID: 11400000, guid: 84bcd10ff92e24dd183ce5e36acc54c9, type: 2}
+  - {fileID: 11400000, guid: 86f17d716a9144973a266ff68a9d7aff, type: 2}
+  scheduleLength: 4

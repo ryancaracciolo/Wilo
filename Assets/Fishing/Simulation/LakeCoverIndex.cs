@@ -20,28 +20,39 @@ public sealed class LakeCoverIndex
     readonly Dictionary<long, List<int>> grid = new Dictionary<long, List<int>>(256);
     readonly HashSet<int> seen = new HashSet<int>();
 
+    float maxRadius;
+    float vegetationReach = 10f;
+
     public int Count => points.Count;
 
     public void Clear()
     {
         points.Clear();
         grid.Clear();
+        maxRadius = 0f;
     }
 
     public void Add(float x, float z, float radius, CoverKind kind)
     {
-        points.Add(new CoverPoint(x, z, Mathf.Max(0.6f, radius), kind));
+        radius = Mathf.Max(0.6f, radius);
+        maxRadius = Mathf.Max(maxRadius, radius);
+        points.Add(new CoverPoint(x, z, radius, kind));
     }
 
-    public void Bake()
+    /// <summary>
+    /// Weeds are queried with extra reach, so they must be registered in every
+    /// cell that reach can touch or beds silently drop out at grid seams.
+    /// </summary>
+    public void Bake(float vegetationQueryReach)
     {
+        vegetationReach = Mathf.Max(0f, vegetationQueryReach);
         grid.Clear();
         for (int i = 0; i < points.Count; i++)
         {
             CoverPoint p = points[i];
             float bakeRadius = p.Radius;
             if (p.Kind == CoverKind.Vegetation)
-                bakeRadius += 10f;
+                bakeRadius += vegetationReach;
             int reach = Mathf.Max(1, Mathf.CeilToInt(bakeRadius / Cell));
             int cx = Mathf.FloorToInt(p.X / Cell);
             int cz = Mathf.FloorToInt(p.Z / Cell);
@@ -78,7 +89,7 @@ public sealed class LakeCoverIndex
         seen.Clear();
 
         float extraMax = Mathf.Max(extraRock, Mathf.Max(extraWood, extraVeg));
-        int span = Mathf.Max(1, Mathf.CeilToInt((extraMax + 10f) / Cell));
+        int span = Mathf.Max(1, Mathf.CeilToInt((extraMax + maxRadius) / Cell));
         int cx = Mathf.FloorToInt(x / Cell);
         int cz = Mathf.FloorToInt(z / Cell);
         for (int ix = cx - span; ix <= cx + span; ix++)
@@ -135,20 +146,35 @@ public sealed class LakeCoverIndex
         veg = Mathf.Min(veg, 16f);
     }
 
-    public bool TryClosest(float x, float z, CoverKind kind, float maxDist, out float px, out float pz)
+    /// <summary>
+    /// Nearest cover of a kind whose position falls inside the rect. Lets a
+    /// spawn cell own exactly the cover standing in it, so neighbouring cells
+    /// cannot both stack fish on the same stump.
+    /// </summary>
+    public bool TryClosestInRect(
+        float x,
+        float z,
+        float xMin,
+        float zMin,
+        float xMax,
+        float zMax,
+        CoverKind kind,
+        out float px,
+        out float pz)
     {
         px = x;
         pz = z;
-        float best = maxDist * maxDist;
+        float best = float.MaxValue;
         bool found = false;
         seen.Clear();
 
-        int span = Mathf.Max(1, Mathf.CeilToInt(maxDist / Cell));
-        int cx = Mathf.FloorToInt(x / Cell);
-        int cz = Mathf.FloorToInt(z / Cell);
-        for (int ix = cx - span; ix <= cx + span; ix++)
+        int ix0 = Mathf.FloorToInt(xMin / Cell);
+        int ix1 = Mathf.FloorToInt(xMax / Cell);
+        int iz0 = Mathf.FloorToInt(zMin / Cell);
+        int iz1 = Mathf.FloorToInt(zMax / Cell);
+        for (int ix = ix0; ix <= ix1; ix++)
         {
-            for (int iz = cz - span; iz <= cz + span; iz++)
+            for (int iz = iz0; iz <= iz1; iz++)
             {
                 if (!grid.TryGetValue(Key(ix, iz), out List<int> list))
                     continue;
@@ -161,6 +187,8 @@ public sealed class LakeCoverIndex
 
                     CoverPoint p = points[id];
                     if (p.Kind != kind)
+                        continue;
+                    if (p.X < xMin || p.X > xMax || p.Z < zMin || p.Z > zMax)
                         continue;
 
                     float dx = x - p.X;

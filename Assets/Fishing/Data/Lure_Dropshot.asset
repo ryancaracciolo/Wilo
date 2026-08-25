@@ -1,0 +1,25 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: da166cf70adb14e4fb6554285be9c16d, type: 3}
+  m_Name: Lure_Dropshot
+  m_EditorClassIdentifier: Assembly-CSharp::LureDefinition
+  Id: dropshot
+  DisplayName: Dropshot
+  Hint: Finesse. Hovers just off the bottom for fish that will not chase.
+  Color: {r: 0.55, g: 0.66, b: 0.78, a: 1}
+  Kind: 5
+  SinkSpeed: 1.1
+  Ride: 1
+  RideDepthFeet: 2.5
+  HopFeet: 0
+  DrawDistance: 2.2
+  WorksAtRest: 0.95

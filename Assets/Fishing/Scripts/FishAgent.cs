@@ -15,9 +15,22 @@ public class FishAgent : MonoBehaviour
         ShowingCatch
     }
 
-    const float NoticeRadius = 8f;
     const float GiveUpRadius = 14f;
     const float StrikeRadius = 2.1f;
+
+    /// <summary>
+    /// Chances per second to commit while the lure is inside the strike radius.
+    /// Time in the zone is the whole tradeoff: a fast lure sweeps more water but
+    /// gives each fish only a moment, a bait left sitting gets asked repeatedly.
+    /// </summary>
+    const float CommitPerSecond = 0.5f;
+
+    /// <summary>How long a fish will shadow a lure before losing interest.</summary>
+    const float FollowPatience = 22f;
+
+    /// <summary>How far off the bait a following fish holds. Well inside the strike radius.</summary>
+    const float FollowStandoff = 0.9f;
+
     static readonly int ForceVisibleId = Shader.PropertyToID("_ForceVisible");
 
     LakeSimulation lake;
@@ -37,6 +50,8 @@ public class FishAgent : MonoBehaviour
     float turnRate;
     float nextPickTime;
     float ignoreUntil;
+    float followUntil;
+    float followPhase;
     float columnT;
     float fightTime;
     float nextSurgeTime;
@@ -90,6 +105,8 @@ public class FishAgent : MonoBehaviour
         angler = null;
         jumping = false;
         ignoreUntil = 0f;
+        followUntil = 0f;
+        followPhase = Random.value * Mathf.PI * 2f;
         SetAnimatorSpeed(1f);
         if (prefabScale.sqrMagnitude < 0.0001f)
             prefabScale = Vector3.one * 0.25f;
@@ -209,14 +226,24 @@ public class FishAgent : MonoBehaviour
         if (Time.time >= nextPickTime && mood == Mood.Wander)
             PickDestination();
 
+        SetAnimatorSpeed(mood == Mood.Following ? 1.35f : 1f);
+
         Vector3 pos = transform.position;
-        float move = mood == Mood.Following ? Mathf.Max(speed * 2.4f, 6.5f) : speed;
+        float move = mood == Mood.Following ? ChaseSpeed() : speed;
         Vector3 planarTarget = new Vector3(destination.x, destination.y, destination.z);
         if (mood != Mood.Following)
             planarTarget.y = pos.y;
         Vector3 next = Vector3.MoveTowards(pos, planarTarget, move * Time.deltaTime);
         Vector3 heading = planarTarget - pos;
-        if (mood != Mood.Following)
+        if (mood == Mood.Following)
+        {
+            // Keep its nose on the bait while it circles, rather than facing the
+            // hold point it is already sitting on.
+            LurePresence bait = lake.Lure;
+            if (bait != null && bait.IsActive)
+                heading = bait.Position - pos;
+        }
+        else
             heading.y = 0f;
         if (heading.sqrMagnitude > 0.0001f)
         {
@@ -229,7 +256,7 @@ public class FishAgent : MonoBehaviour
 
         transform.position = next;
         if (mood == Mood.Wander)
-            SnapToColumn();
+            EaseToColumn();
     }
 
     void TickLure()
@@ -252,11 +279,11 @@ public class FishAgent : MonoBehaviour
         float planar = DistanceXZ(transform.position, lure.Position);
         if (mood == Mood.Wander)
         {
-            if (planar > NoticeRadius)
+            if (planar > lure.NoticeRadius)
                 return;
 
             float activity = lake.SampleAt(lure.Position).Activity;
-            float notice = 0.18f + activity * 0.7f;
+            float notice = (0.18f + activity * 0.7f) * LureDepthFit(lure);
             if (Random.value > notice)
             {
                 ignoreUntil = Time.time + 7f;
@@ -264,9 +291,10 @@ public class FishAgent : MonoBehaviour
             }
 
             mood = Mood.Following;
+            followUntil = Time.time + FollowPatience;
         }
 
-        if (planar > GiveUpRadius)
+        if (planar > GiveUpRadius || Time.time >= followUntil || DistanceXZ(transform.position, home) > ChaseLeash())
         {
             mood = Mood.Wander;
             ignoreUntil = Time.time + 4f;
@@ -274,21 +302,80 @@ public class FishAgent : MonoBehaviour
             return;
         }
 
-        destination = lure.Position;
+        destination = ShadowPoint(lure.Position);
         if (Vector3.Distance(transform.position, lure.Position) > StrikeRadius)
             return;
 
-        float bite = 0.22f + lake.SampleAt(lure.Position).Activity * 0.65f;
-        if (Random.value <= bite && lure.OfferStrike(this))
-        {
-            mood = Mood.Hooked;
-            SetForceVisible(true);
+        float appeal = 0.22f + lake.SampleAt(lure.Position).Activity * 0.65f;
+        float chance = appeal * lure.Liveliness * CommitPerSecond * Time.deltaTime;
+        if (Random.value > chance)
             return;
+
+        // Hook() runs inside OfferStrike and is what actually sets Hooked.
+        // If nobody took the strike, hand the lure back and try again soon.
+        if (lure.OfferStrike(this))
+        {
+            if (mood == Mood.Hooked)
+                return;
+            lure.ReleaseClaim(this);
         }
 
         mood = Mood.Wander;
-        ignoreUntil = Time.time + 8f;
+        ignoreUntil = Time.time + 0.75f;
         PickDestination();
+    }
+
+    /// <summary>
+    /// A following fish shadows the bait instead of parking on it. Steering at
+    /// the lure itself lands the fish exactly on target, where it stops dead and
+    /// stops turning — which reads as a frozen fish for the seconds it spends
+    /// deciding whether to eat.
+    /// </summary>
+    Vector3 ShadowPoint(Vector3 lurePosition)
+    {
+        float t = Time.time * 1.9f + followPhase;
+        return lurePosition + new Vector3(
+            Mathf.Cos(t) * FollowStandoff,
+            Mathf.Sin(t * 0.7f) * 0.25f,
+            Mathf.Sin(t) * FollowStandoff);
+    }
+
+    /// <summary>
+    /// A committed fish bursts hard enough to run a lure down. Without that a
+    /// fast bait could never be caught at all; what actually limits fast lures
+    /// is how quickly they drag a fish off its spot, not that it cannot keep up.
+    /// </summary>
+    float ChaseSpeed()
+    {
+        float burst = Mathf.Max(speed * 2.4f, 6.5f);
+        LurePresence lure = lake.Lure;
+        if (lure != null)
+            burst = Mathf.Max(burst, lure.Speed * 1.6f);
+        return Mathf.Min(burst, 12f);
+    }
+
+    /// <summary>
+    /// How far a fish will let a lure pull it off its spot. This is what turns
+    /// retrieve speed into time in the strike zone: a fast bait spends the whole
+    /// budget in seconds, a bait left sitting never spends any of it.
+    /// </summary>
+    float ChaseLeash() => Mathf.Max(wanderRadius * 1.6f, 12f);
+
+    /// <summary>
+    /// Bass feed upward. A lure riding above the fish is in play; one passing
+    /// below it mostly is not. Clear water widens the window.
+    /// </summary>
+    float LureDepthFit(LurePresence lure)
+    {
+        HabitatProfile profile = lake.Profile;
+        if (profile == null)
+            return 1f;
+
+        WorldConditions conditions = lake.Conditions;
+        float scale = conditions != null ? conditions.GameplayDepthScale : 0.5f;
+        float visibility = conditions != null ? conditions.WaterVisibility : 10f;
+        float aboveFeet = (lure.Position.y - transform.position.y) * scale * 3.28084f;
+        return profile.LureDepthFit(aboveFeet, visibility);
     }
 
     void TickFight()
@@ -518,8 +605,9 @@ public class FishAgent : MonoBehaviour
     {
         if (animator == null)
             animator = GetComponentInChildren<Animator>();
-        if (animator != null)
-            animator.speed = value;
+        if (animator == null || Mathf.Approximately(animator.speed, value))
+            return;
+        animator.speed = value;
     }
 
     static Vector3 Flatten(Vector3 value)
@@ -557,9 +645,24 @@ public class FishAgent : MonoBehaviour
             return;
 
         Vector3 pos = transform.position;
-        float depth = lake.GeometricDepthMeters(pos);
-        pos.y = lake.SurfaceY - DepthBelowSurface(depth, columnT);
+        pos.y = ColumnY(pos);
         transform.position = pos;
+    }
+
+    /// <summary>Settle back to holding depth. A fish that rose for a lure swims down, it does not blink.</summary>
+    void EaseToColumn()
+    {
+        if (lake == null)
+            return;
+
+        Vector3 pos = transform.position;
+        pos.y = Mathf.MoveTowards(pos.y, ColumnY(pos), Mathf.Max(1f, speed * 2f) * Time.deltaTime);
+        transform.position = pos;
+    }
+
+    float ColumnY(Vector3 pos)
+    {
+        return lake.SurfaceY - DepthBelowSurface(lake.GeometricDepthMeters(pos), columnT);
     }
 
     static float DistanceXZ(Vector3 a, Vector3 b)

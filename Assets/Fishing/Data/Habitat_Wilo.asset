@@ -23,6 +23,14 @@ MonoBehaviour:
   vegetationWeight: 1.15
   structureSoftness: 0.38
   dropoffSolo: 0.08
+  pointWeight: 0.9
+  pointSolo: 0.16
+  pointSampleMeters: 18
+  pointStrongFeet: 10
+  lureRiseFeet: 9
+  lureSinkFeet: 6
+  lureSlackFeet: 2
+  clarityReferenceMeters: 10
   smallVegMul: 1.35
   largeVegMul: 0.38
   smallWoodMul: 0.75
@@ -37,7 +45,7 @@ MonoBehaviour:
   rockTrophyDepthFeet: 42
   rockOffBand: 0.18
   dropoffSampleMeters: 8
-  dropoffStrongFeet: 7
+  dropoffStrongFeet: 12
   rockReachMeters: 2.2
   woodHugMeters: 2.2
   coverRadiusMeters: 9
@@ -52,6 +60,7 @@ MonoBehaviour:
     minDepthFeet: 2
     maxDepthFeet: 35
     dropoff: 0.7
+    point: 0.75
     rock: 0.85
     wood: 2
     vegetation: 1.45
@@ -66,6 +75,7 @@ MonoBehaviour:
     minDepthFeet: 5
     maxDepthFeet: 60
     dropoff: 1.55
+    point: 1.7
     rock: 2.4
     wood: 0.18
     vegetation: 0.12

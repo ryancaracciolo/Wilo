@@ -12,8 +12,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: da166cf70adb14e4fb6554285be9c16d, type: 3}
   m_Name: Lure_Worm
   m_EditorClassIdentifier: Assembly-CSharp::LureDefinition
+  Id: worm
   DisplayName: Worm
-  Hint: Soft and simple. Slow along the bottom.
+  Hint: Soft and quiet. Sinks slowly and stays where you leave it.
   Color: {r: 0.45, g: 0.28, b: 0.42, a: 1}
   Kind: 0
   SinkSpeed: 0.16
+  Ride: 0
+  RideDepthFeet: 0
+  HopFeet: 0
+  DrawDistance: 2.5
+  WorksAtRest: 0.9

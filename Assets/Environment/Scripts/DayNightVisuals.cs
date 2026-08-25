@@ -1,22 +1,42 @@
+using System;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 /// <summary>
-/// Turns the calendar hour into sun, sky, ambient, and fog.
-/// Reads WorldConditions; does not own the clock.
+/// Per-season colour grade. Tints multiply the shared day/night palette so a
+/// season reads as a mood shift rather than a separate set of colours.
+/// </summary>
+[Serializable]
+public class SeasonLook
+{
+    public string label = "Season";
+    [Tooltip("Multiplies sun, ambient, and fog. Keep near white; this is a mood nudge.")]
+    public Color lightTint = Color.white;
+    [Tooltip("Multiplies the lake's shallow and deep colours.")]
+    public Color waterTint = Color.white;
+    [Tooltip("Scales fog density. Winter and fall sit hazier than summer.")]
+    [Range(0.25f, 4f)] public float fogScale = 1f;
+}
+
+/// <summary>
+/// Turns the calendar into sun, sky, ambient, fog, and water colour.
+/// Reads WorldConditions for hour and season; does not own the clock.
 /// </summary>
 public class DayNightVisuals : MonoBehaviour
 {
     [SerializeField] WorldConditions conditions;
     [SerializeField] Light sun;
+    [SerializeField] Transform waterSurface;
 
     [Header("Sun")]
     [SerializeField] float azimuth = -30f;
     [SerializeField] float maxElevation = 58f;
-    [SerializeField] float twilightDegrees = 22f;
     [SerializeField] float dayIntensity = 1.15f;
     [SerializeField] Color dayColor = new Color(1f, 0.96f, 0.88f);
     [SerializeField] Color dawnColor = new Color(1f, 0.62f, 0.38f);
     [SerializeField] Color duskColor = new Color(1f, 0.42f, 0.24f);
+    [Tooltip("Fraction of the day spent easing in and out of full daylight.")]
+    [SerializeField, Range(0.05f, 0.4f)] float twilightFraction = 0.2f;
 
     [Header("Moon")]
     [SerializeField] float moonIntensity = 0.12f;
@@ -47,22 +67,69 @@ public class DayNightVisuals : MonoBehaviour
     [SerializeField] float dayFogDensity = 0.00028f;
     [SerializeField] float nightFogDensity = 0.00055f;
 
+    [Header("Water")]
+    [Tooltip("How far the lake darkens at night, 0 keeps the daytime colour.")]
+    [SerializeField, Range(0f, 1f)] float nightWaterDarken = 0.72f;
+    [SerializeField] Color nightWaterTint = new Color(0.32f, 0.42f, 0.6f);
+
+    [Header("Seasons")]
+    [SerializeField]
+    SeasonLook[] seasons =
+    {
+        new SeasonLook
+        {
+            label = "Spring",
+            lightTint = new Color(0.98f, 1f, 0.96f),
+            waterTint = new Color(0.94f, 1f, 0.98f),
+            fogScale = 1.25f
+        },
+        new SeasonLook
+        {
+            label = "Summer",
+            lightTint = new Color(1f, 0.99f, 0.92f),
+            waterTint = new Color(1f, 1f, 1f),
+            fogScale = 0.8f
+        },
+        new SeasonLook
+        {
+            label = "Fall",
+            lightTint = new Color(1f, 0.92f, 0.78f),
+            waterTint = new Color(1f, 0.94f, 0.82f),
+            fogScale = 1.35f
+        },
+        new SeasonLook
+        {
+            label = "Winter",
+            lightTint = new Color(0.86f, 0.92f, 1f),
+            waterTint = new Color(0.82f, 0.9f, 0.96f),
+            fogScale = 1.9f
+        }
+    };
+
+    static readonly int ShallowId = Shader.PropertyToID("_ShallowColor");
+    static readonly int DeepId = Shader.PropertyToID("_DeepColor");
+
     Material skyRuntime;
     Material skyShared;
+    Renderer waterRenderer;
+    Material waterRuntime;
+    Material waterShared;
+    Color waterShallowBase;
+    Color waterDeepBase;
+    bool hasWaterBase;
 
     void OnEnable()
     {
-        if (sun == null)
-            sun = GetComponent<Light>();
-        if (conditions == null)
-            conditions = FindFirstObjectByType<WorldConditions>();
+        Resolve();
         CaptureSky();
+        CaptureWater();
         Apply();
     }
 
     void OnDisable()
     {
         RestoreSky();
+        RestoreWater();
     }
 
     void LateUpdate()
@@ -70,79 +137,119 @@ public class DayNightVisuals : MonoBehaviour
         Apply();
     }
 
-    void Apply()
+    void Resolve()
     {
         if (sun == null)
             sun = GetComponent<Light>();
-        if (sun == null)
-            return;
         if (conditions == null)
             conditions = FindFirstObjectByType<WorldConditions>();
+        if (waterSurface == null)
+        {
+            var surface = GameObject.Find("Surface");
+            if (surface != null)
+                waterSurface = surface.transform;
+        }
+    }
 
-        float hour = conditions != null ? conditions.Hour : 12f;
-        Season season = conditions != null ? conditions.Season : Season.Summer;
-        DawnDusk(season, out float dawn, out float dusk);
+    void Apply()
+    {
+        Resolve();
+        if (sun == null)
+            return;
+
+        float hour = conditions != null ? conditions.Hour : GameCalendar.SolarNoonHour;
+        float dawn = conditions != null ? conditions.DawnHour : 6f;
+        float dusk = conditions != null ? conditions.DuskHour : 19f;
 
         float span = Mathf.Max(0.5f, dusk - dawn);
         float u = (hour - dawn) / span;
-        bool daytime = u > 0f && u < 1f;
+        float look = u > 0f && u < 1f ? DayCurve(u) : 0f;
+        SeasonLook season = BlendSeason();
 
-        float look;
-        if (daytime)
+        if (u > 0f && u < 1f)
         {
             float elevation = Mathf.Sin(u * Mathf.PI) * maxElevation;
-            float sunFade = Mathf.Clamp01(elevation / Mathf.Max(1f, twilightDegrees));
-            look = SkyLook(u);
             sun.transform.rotation = Quaternion.Euler(elevation, azimuth, 0f);
-            sun.color = SunColor(u);
-            sun.intensity = Mathf.Lerp(moonIntensity, dayIntensity, Smooth(sunFade));
-            sun.shadowStrength = Mathf.Lerp(0.25f, 1f, look);
+            sun.color = Tint(SunColor(u), season.lightTint);
+            sun.intensity = Mathf.Lerp(moonIntensity, dayIntensity, look);
+            sun.shadowStrength = Mathf.Lerp(0.2f, 1f, look);
         }
         else
         {
-            float nightSpan = 24f - span;
+            float nightSpan = Mathf.Max(0.5f, 24f - span);
             float nightU = hour < dawn
                 ? (hour + 24f - dusk) / nightSpan
                 : (hour - dusk) / nightSpan;
             float elevation = Mathf.Sin(Mathf.Clamp01(nightU) * Mathf.PI) * moonElevation;
-            look = 0f;
             sun.transform.rotation = Quaternion.Euler(Mathf.Max(8f, elevation), azimuth + 180f, 0f);
-            sun.color = moonColor;
+            sun.color = Tint(moonColor, season.lightTint);
             sun.intensity = moonIntensity;
-            sun.shadowStrength = 0.35f;
+            sun.shadowStrength = 0.2f;
         }
 
-        RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
-        RenderSettings.ambientSkyColor = Color.Lerp(nightSky, daySky, look);
-        RenderSettings.ambientEquatorColor = Color.Lerp(nightEquator, dayEquator, look);
-        RenderSettings.ambientGroundColor = Color.Lerp(nightGroundAmbient, dayGroundAmbient, look);
-        RenderSettings.fogColor = Color.Lerp(nightFog, dayFog, look);
-        RenderSettings.fogDensity = Mathf.Lerp(nightFogDensity, dayFogDensity, look);
-        ApplySky(look);
+        RenderSettings.ambientMode = AmbientMode.Trilight;
+        RenderSettings.ambientSkyColor = Grade(nightSky, daySky, look, season.lightTint);
+        RenderSettings.ambientEquatorColor = Grade(nightEquator, dayEquator, look, season.lightTint);
+        RenderSettings.ambientGroundColor = Grade(nightGroundAmbient, dayGroundAmbient, look, season.lightTint);
+        RenderSettings.fogColor = Grade(nightFog, dayFog, look, season.lightTint);
+        RenderSettings.fogDensity = Mathf.Lerp(nightFogDensity, dayFogDensity, look) * season.fogScale;
+
+        ApplySky(look, season);
+        ApplyWater(look, season);
+    }
+
+    /// <summary>Season palette blended so whole seasons hold their own mood and only the seams cross-fade.</summary>
+    SeasonLook BlendSeason()
+    {
+        if (seasons == null || seasons.Length == 0)
+            return new SeasonLook();
+        if (seasons.Length == 1 || conditions == null)
+            return seasons[0];
+
+        float pos = conditions.SeasonBlend;
+        int from = Mathf.FloorToInt(pos);
+        float f = Smooth(pos - from);
+        SeasonLook a = seasons[Mod(from, seasons.Length)];
+        SeasonLook b = seasons[Mod(from + 1, seasons.Length)];
+
+        return new SeasonLook
+        {
+            lightTint = Color.Lerp(a.lightTint, b.lightTint, f),
+            waterTint = Color.Lerp(a.waterTint, b.waterTint, f),
+            fogScale = Mathf.Lerp(a.fogScale, b.fogScale, f)
+        };
     }
 
     Color SunColor(float u)
     {
-        if (u < 0.18f)
-            return Color.Lerp(dawnColor, dayColor, Smooth(u / 0.18f));
-        if (u > 0.82f)
-            return Color.Lerp(dayColor, duskColor, Smooth((u - 0.82f) / 0.18f));
+        float edge = twilightFraction;
+        if (u < edge)
+            return Color.Lerp(dawnColor, dayColor, Smooth(u / edge));
+        if (u > 1f - edge)
+            return Color.Lerp(dayColor, duskColor, Smooth((u - (1f - edge)) / edge));
         return dayColor;
+    }
+
+    float DayCurve(float u)
+    {
+        float edge = twilightFraction;
+        if (u < edge)
+            return Smooth(u / edge);
+        if (u > 1f - edge)
+            return Smooth((1f - u) / edge);
+        return 1f;
     }
 
     void CaptureSky()
     {
-        if (!Application.isPlaying)
-            return;
-        if (skyRuntime != null)
+        if (!Application.isPlaying || skyRuntime != null)
             return;
 
         skyShared = RenderSettings.skybox;
         if (skyShared == null)
             return;
 
-        skyRuntime = new Material(skyShared);
-        skyRuntime.name = skyShared.name + " (Night)";
+        skyRuntime = new Material(skyShared) { name = skyShared.name + " (Day Night)" };
         RenderSettings.skybox = skyRuntime;
         DynamicGI.UpdateEnvironment();
     }
@@ -159,56 +266,94 @@ public class DayNightVisuals : MonoBehaviour
         skyShared = null;
     }
 
-    void ApplySky(float look)
+    void ApplySky(float look, SeasonLook season)
     {
-        Material sky = Application.isPlaying ? skyRuntime : RenderSettings.skybox;
+        Material sky = Application.isPlaying ? skyRuntime : null;
         if (sky == null)
             return;
 
         if (sky.HasProperty("_SkyTint"))
-            sky.SetColor("_SkyTint", Color.Lerp(nightSkyTint, daySkyTint, look));
+            sky.SetColor("_SkyTint", Grade(nightSkyTint, daySkyTint, look, season.lightTint));
         if (sky.HasProperty("_GroundColor"))
-            sky.SetColor("_GroundColor", Color.Lerp(nightGround, dayGround, look));
+            sky.SetColor("_GroundColor", Grade(nightGround, dayGround, look, season.lightTint));
         if (sky.HasProperty("_Exposure"))
             sky.SetFloat("_Exposure", Mathf.Lerp(nightExposure, dayExposure, look));
         if (sky.HasProperty("_AtmosphereThickness"))
             sky.SetFloat("_AtmosphereThickness", Mathf.Lerp(nightAtmosphere, dayAtmosphere, look));
-        if (sky.HasProperty("_SunSize"))
-            sky.SetFloat("_SunSize", Mathf.Lerp(0.02f, 0.04f, look));
     }
 
-    static float SkyLook(float u)
+    void CaptureWater()
     {
-        const float edge = 0.2f;
-        if (u < edge)
-            return Smooth(u / edge);
-        if (u > 1f - edge)
-            return Smooth((1f - u) / edge);
-        return 1f;
+        if (!Application.isPlaying || waterRuntime != null || waterSurface == null)
+            return;
+
+        waterRenderer = waterSurface.GetComponent<Renderer>();
+        waterShared = waterRenderer != null ? waterRenderer.sharedMaterial : null;
+        if (waterShared == null || !waterShared.HasProperty(ShallowId))
+            return;
+
+        waterShallowBase = waterShared.GetColor(ShallowId);
+        waterDeepBase = waterShared.HasProperty(DeepId)
+            ? waterShared.GetColor(DeepId)
+            : waterShallowBase;
+        hasWaterBase = true;
+
+        waterRuntime = new Material(waterShared) { name = waterShared.name + " (Day Night)" };
+        waterRenderer.sharedMaterial = waterRuntime;
     }
 
-    static void DawnDusk(Season season, out float dawn, out float dusk)
+    void RestoreWater()
     {
-        switch (season)
-        {
-            case Season.Summer:
-                dawn = 5f;
-                dusk = 20.5f;
-                return;
-            case Season.Winter:
-                dawn = 7.5f;
-                dusk = 17f;
-                return;
-            default:
-                dawn = 6f;
-                dusk = 19f;
-                return;
-        }
+        if (!Application.isPlaying)
+            return;
+        if (waterRenderer != null && waterShared != null)
+            waterRenderer.sharedMaterial = waterShared;
+        if (waterRuntime != null)
+            Destroy(waterRuntime);
+        waterRuntime = null;
+        waterShared = null;
+        hasWaterBase = false;
+    }
+
+    void ApplyWater(float look, SeasonLook season)
+    {
+        if (waterRuntime == null || !hasWaterBase)
+            return;
+
+        waterRuntime.SetColor(ShallowId, WaterColor(waterShallowBase, look, season));
+        if (waterRuntime.HasProperty(DeepId))
+            waterRuntime.SetColor(DeepId, WaterColor(waterDeepBase, look, season));
+    }
+
+    /// <summary>Darkens toward moonlit water at night, then applies the seasonal tint. Alpha holds so transparency is unchanged.</summary>
+    Color WaterColor(Color day, float look, SeasonLook season)
+    {
+        Color nightMul = Color.Lerp(Color.white, nightWaterTint, nightWaterDarken);
+        Color lit = Color.Lerp(Tint(day, nightMul), day, look);
+        Color graded = Tint(lit, season.waterTint);
+        graded.a = day.a;
+        return graded;
+    }
+
+    static Color Grade(Color night, Color day, float look, Color tint)
+    {
+        return Tint(Color.Lerp(night, day, look), tint);
+    }
+
+    static Color Tint(Color c, Color tint)
+    {
+        return new Color(c.r * tint.r, c.g * tint.g, c.b * tint.b, c.a);
     }
 
     static float Smooth(float t)
     {
         t = Mathf.Clamp01(t);
         return t * t * (3f - 2f * t);
+    }
+
+    static int Mod(int value, int modulus)
+    {
+        int r = value % modulus;
+        return r < 0 ? r + modulus : r;
     }
 }

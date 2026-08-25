@@ -445,6 +445,75 @@
     -unity-font-style: bold;
 }
 
+.hud-notice-toast {
+    position: absolute;
+    left: 50%;
+    top: 9%;
+    translate: -50% 0;
+    padding: 9px 20px;
+    border-radius: 16px;
+    border-width: 3px;
+    border-color: rgb(212, 180, 131);
+    background-color: rgb(255, 248, 236);
+    font-size: 15px;
+    color: rgb(76, 61, 47);
+    -unity-font-style: bold;
+    white-space: normal;
+    max-width: 460px;
+    -unity-text-align: middle-center;
+}
+
+.hud-tourney-chip {
+    position: absolute;
+    left: 50%;
+    top: 2%;
+    translate: -50% 0;
+    padding: 7px 18px;
+    border-radius: 14px;
+    border-width: 3px;
+    border-color: rgb(224, 178, 96);
+    background-color: rgb(255, 250, 238);
+    font-size: 14px;
+    color: rgb(76, 61, 47);
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+}
+
+.hud-dock-prompt {
+    position: absolute;
+    left: 50%;
+    bottom: 22%;
+    translate: -50% 0;
+    align-items: center;
+    padding: 12px 22px 8px 22px;
+    border-radius: 20px;
+    border-width: 3px;
+    border-color: rgb(212, 180, 131);
+    background-color: rgb(255, 248, 236);
+}
+
+.hud-dock-prompt:hover {
+    background-color: rgb(255, 252, 245);
+}
+
+.hud-dock-prompt > .hud-body {
+    margin-bottom: 2px;
+    font-size: 16px;
+}
+
+.hud-dock-prompt > .hud-muted {
+    margin-bottom: 0;
+}
+
+.hud-fade {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgb(12, 10, 16);
+}
+
 .hud-catch-sheet {
     position: absolute;
     left: 22px;
@@ -569,4 +638,60 @@
     color: rgb(138, 116, 96);
     -unity-text-align: middle-center;
     -unity-font-style: bold;
+}
+
+.hud-lure-depth {
+    position: absolute;
+    right: 22px;
+    top: 278px;
+    width: 78px;
+    height: 300px;
+    flex-direction: column;
+    align-items: stretch;
+    padding: 8px 8px 8px 8px;
+    border-radius: 22px;
+    border-width: 3px;
+    border-color: rgb(212, 180, 131);
+    background-color: rgb(255, 248, 236);
+}
+
+.hud-lure-depth-title {
+    height: 14px;
+    font-size: 11px;
+    color: rgb(138, 116, 96);
+    -unity-text-align: middle-center;
+    -unity-font-style: bold;
+}
+
+.hud-lure-depth-readout {
+    height: 20px;
+    font-size: 15px;
+    color: rgb(77, 61, 46);
+    -unity-text-align: middle-center;
+    -unity-font-style: bold;
+}
+
+.hud-lure-depth-column {
+    flex-grow: 1;
+    margin: 4px 6px 4px 6px;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.hud-lure-depth-marker {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 14px;
+}
+
+.hud-lure-depth-marker--down {
+    opacity: 0.55;
+}
+
+.hud-lure-depth-bed {
+    height: 14px;
+    font-size: 11px;
+    color: rgb(138, 116, 96);
+    -unity-text-align: middle-center;
 }

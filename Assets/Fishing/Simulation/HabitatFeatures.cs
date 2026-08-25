@@ -11,12 +11,25 @@ public readonly struct HabitatFeatures
     public readonly float Wood;
     public readonly float Vegetation;
 
-    public HabitatFeatures(float depthFeet, float dropoff, float rock, float wood, float vegetation)
+    /// <summary>
+    /// -1 is a hole or basin, 0 is flat or a straight wall, +1 is a point or
+    /// shoal standing up out of deeper water.
+    /// </summary>
+    public readonly float Convexity;
+
+    public HabitatFeatures(
+        float depthFeet,
+        float dropoff,
+        float rock,
+        float wood,
+        float vegetation,
+        float convexity = 0f)
     {
         DepthFeet = depthFeet;
         Dropoff = dropoff;
         Rock = rock;
         Wood = wood;
         Vegetation = vegetation;
+        Convexity = convexity;
     }
 }

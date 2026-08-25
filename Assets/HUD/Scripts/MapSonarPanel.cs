@@ -27,6 +27,8 @@ public class MapSonarPanel : VisualElement
     public MapSonarPanel()
     {
         AddToClassList("hud-gadget");
+        pickingMode = PickingMode.Position;
+        RegisterCallback<PointerDownEvent>(OnPointerDown, TrickleDown.TrickleDown);
 
         tabRow = HudUi.Row();
         tabRow.AddToClassList("hud-tab-row");
@@ -117,6 +119,13 @@ public class MapSonarPanel : VisualElement
         sonar.parent.style.display = mapOn ? DisplayStyle.None : DisplayStyle.Flex;
         mapTab.EnableInClassList("hud-tab--on", mapOn);
         sonarTab.EnableInClassList("hud-tab--on", !mapOn);
+    }
+
+    void OnPointerDown(PointerDownEvent evt)
+    {
+        if (evt.button != 0)
+            return;
+        HudInput.NotifyUiPointerDown();
     }
 
     void OnSonarClicked(ClickEvent evt)

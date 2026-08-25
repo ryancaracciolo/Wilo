@@ -391,22 +391,16 @@ public class LocalFishPopulation : MonoBehaviour
     Vector3 BestPointInCell(LakeCellId id, Vector3 origin, int salt)
     {
         Vector3 center = CellCenter(id, origin.y);
-        Vector3 coverAt;
-        if (lake.TryNearestWood(center, cellSize * 0.72f, out coverAt))
-        {
-            Vector3 hugged = HugCover(coverAt, origin.y, salt);
-            if (DistanceXZ(hugged, origin) >= keepClearOfViewer && lake.SampleAt(hugged).HasFish)
-                return hugged;
-        }
-        else if (lake.TryNearestCover(center, CoverKind.Rock, cellSize * 0.55f, out coverAt))
-        {
-            Vector3 hugged = HugCover(coverAt, origin.y, salt);
-            if (DistanceXZ(hugged, origin) >= keepClearOfViewer && lake.SampleAt(hugged).HasFish)
-                return hugged;
-        }
-
         Vector3 best = PointInCell(id, origin.y, salt);
         float bestDensity = -1f;
+
+        // Let wood and rock compete on habitat value. Preferring wood outright
+        // parks smallmouth on a stray log instead of the rock they want.
+        ConsiderCover(id, origin, salt, center, CoverKind.Wood, ref best, ref bestDensity);
+        ConsiderCover(id, origin, salt, center, CoverKind.Rock, ref best, ref bestDensity);
+        if (bestDensity > 0f)
+            return best;
+
         for (int k = 0; k < 8; k++)
         {
             Vector3 point = PointInCell(id, origin.y, Hash(id, salt + k * 19));
@@ -424,19 +418,51 @@ public class LocalFishPopulation : MonoBehaviour
         return best;
     }
 
-    Vector3 HugCover(Vector3 coverAt, float y, int salt)
+    void ConsiderCover(
+        LakeCellId id,
+        Vector3 origin,
+        int salt,
+        Vector3 center,
+        CoverKind kind,
+        ref Vector3 best,
+        ref float bestDensity)
     {
-        float ang = Hash01(salt) * Mathf.PI * 2f;
-        float r = 1f + Hash01(salt ^ 7919) * 3f;
+        Vector3 coverAt;
+        if (!lake.TryCoverInCell(center, cellSize * 0.5f, kind, out coverAt))
+            return;
+
+        float ang = Hash01(Hash(id, salt + (int)kind * 271)) * Mathf.PI * 2f;
+        float r = 1f + Hash01(Hash(id, salt + (int)kind * 733)) * 3f;
         for (int i = 0; i < 6; i++)
         {
             float a = ang + i * 1.047f;
-            Vector3 p = new Vector3(coverAt.x + Mathf.Cos(a) * r, y, coverAt.z + Mathf.Sin(a) * r);
-            if (lake.SampleAt(p).HasFish)
-                return p;
-        }
+            Vector3 p = ClampToCell(
+                id,
+                new Vector3(coverAt.x + Mathf.Cos(a) * r, origin.y, coverAt.z + Mathf.Sin(a) * r));
+            if (DistanceXZ(p, origin) < keepClearOfViewer)
+                continue;
 
-        return coverAt;
+            HabitatSample local = lake.SampleAt(p);
+            if (!local.HasFish)
+                continue;
+
+            if (local.FishPerThousandSqMeters > bestDensity)
+            {
+                bestDensity = local.FishPerThousandSqMeters;
+                best = p;
+            }
+
+            return;
+        }
+    }
+
+    Vector3 ClampToCell(LakeCellId id, Vector3 point)
+    {
+        float xMin = id.X * cellSize;
+        float zMin = id.Z * cellSize;
+        point.x = Mathf.Clamp(point.x, xMin + 0.5f, xMin + cellSize - 0.5f);
+        point.z = Mathf.Clamp(point.z, zMin + 0.5f, zMin + cellSize - 0.5f);
+        return point;
     }
 
     float DensestInCell(LakeCellId id, float y)
@@ -457,10 +483,11 @@ public class LocalFishPopulation : MonoBehaviour
             AccumulateDensity(PointInCell(id, y, Hash(id, 200 + p)), ref sum, ref n, ref peak);
 
         Vector3 center = CellCenter(id, y);
+        float half = cellSize * 0.5f;
         Vector3 coverAt;
-        if (lake.TryNearestWood(center, cellSize * 0.72f, out coverAt))
+        if (lake.TryCoverInCell(center, half, CoverKind.Wood, out coverAt))
             AccumulateDensity(coverAt, ref sum, ref n, ref peak);
-        if (lake.TryNearestCover(center, CoverKind.Rock, cellSize * 0.55f, out coverAt))
+        if (lake.TryCoverInCell(center, half, CoverKind.Rock, out coverAt))
             AccumulateDensity(coverAt, ref sum, ref n, ref peak);
 
         mean = n > 0 ? sum / n : 0f;
@@ -517,12 +544,22 @@ public class LocalFishPopulation : MonoBehaviour
         harvested.TryGetValue(id, out int taken);
         unchecked
         {
-            int h = id.X * 73856093
-                ^ id.Z * 19349663
-                ^ salt * 83492791
-                ^ taken * 374761393
-                ^ sessionSeed * 1103515245;
-            return h == int.MinValue ? 0 : h;
+            uint h = (uint)(id.X * 73856093)
+                ^ (uint)(id.Z * 19349663)
+                ^ (uint)(salt * 83492791)
+                ^ (uint)(taken * 374761393)
+                ^ (uint)(sessionSeed * 1103515245);
+
+            // Callers read low bits (PointInCell, yaw), and an XOR of products
+            // leaves those marching in step across the grid. Avalanche first.
+            h ^= h >> 16;
+            h *= 0x7feb352du;
+            h ^= h >> 15;
+            h *= 0x846ca68bu;
+            h ^= h >> 16;
+
+            int result = (int)h;
+            return result == int.MinValue ? 0 : result;
         }
     }
 

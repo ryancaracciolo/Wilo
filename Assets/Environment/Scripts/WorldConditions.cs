@@ -9,16 +9,6 @@ public enum WeatherKind
     Rain
 }
 
-[Serializable]
-public class TournamentInfo
-{
-    public string Id;
-    public string Name;
-    public string WhenLabel;
-    public string FormatLabel;
-    public bool Registered;
-}
-
 /// <summary>
 /// Scene facade for weather, calendar, and lake queries.
 /// The HUD and fishing read this; DayNightVisuals drives look from the clock.
@@ -41,11 +31,8 @@ public class WorldConditions : MonoBehaviour
     [SerializeField] DayOfWeek startWeekday = DayOfWeek.Saturday;
 
     [Header("Lake")]
-    [SerializeField, Range(0.2f, 1f), Tooltip("Multiplies geometric depth for sonar and fishing. 0.5 makes a 20 ft hole read as 10 ft. Terrain stays put.")]
-    float gameplayDepthScale = 0.5f;
-
-    [Header("Tournaments")]
-    [SerializeField] List<TournamentInfo> upcoming = new List<TournamentInfo>();
+    [SerializeField, Range(0.2f, 1f), Tooltip("Multiplies geometric depth for sonar and fishing. 0.4 makes a 20 ft hole read as 8 ft. Terrain stays put.")]
+    float gameplayDepthScale = 0.4f;
 
     static readonly string[] StructureRoots = { "Rocks", "Stumps", "FallenTrees" };
     static readonly string[] CoverRoots =
@@ -80,6 +67,17 @@ public class WorldConditions : MonoBehaviour
     public string DateLabel => Clock.DateLabel;
     public string SeasonLabel => Clock.SeasonLabel;
     public float RealMinutesPerDay => Mathf.Max(1f, realMinutesPerDay);
+    public float DawnHour => Clock.DawnHour;
+    public float DuskHour => Clock.DuskHour;
+    public float DaylightHours => Clock.DaylightHours;
+    public float SeasonBlend => Clock.SeasonBlend;
+    public bool IsNight => Clock.IsNight;
+
+    /// <summary>Set every frame by the HUD so open panels do not burn fishing time.</summary>
+    public bool HoldClock { get; set; }
+
+    /// <summary>The calendar itself, for systems that need to look at other days.</summary>
+    public GameCalendar Calendar => Clock;
 
     GameCalendar Clock => live ? calendar : PreviewClock();
     public float GameplayDepthScale => gameplayDepthScale > 0.05f ? gameplayDepthScale : 0.5f;
@@ -121,7 +119,6 @@ public class WorldConditions : MonoBehaviour
             return transform.position;
         }
     }
-    public IReadOnlyList<TournamentInfo> UpcomingTournaments => upcoming;
 
     public string TimeLabel => Clock.TimeLabel;
 
@@ -143,6 +140,21 @@ public class WorldConditions : MonoBehaviour
     }
 
     public event Action<int> DayChanged;
+
+    /// <summary>Sleeps to the next occurrence of an hour. Returns days skipped.</summary>
+    public int AdvanceToHour(float hour)
+    {
+        if (!Application.isPlaying)
+        {
+            SetTime(hour);
+            return 0;
+        }
+
+        int days = calendar.AdvanceToHour(hour);
+        if (days > 0)
+            DayChanged?.Invoke(calendar.DayIndex);
+        return days;
+    }
 
     public void SetTime(float hour)
     {
@@ -174,39 +186,39 @@ public class WorldConditions : MonoBehaviour
             DayChanged?.Invoke(calendar.DayIndex);
     }
 
-    [ContextMenu("Set Dawn")]
-    void DebugDawn() => SetTime(6f);
+    [ContextMenu("Time/Dawn")]
+    void DebugDawn() => JumpTo(DawnHour + 0.25f);
 
-    [ContextMenu("Set Noon")]
-    void DebugNoon() => SetTime(12f);
+    [ContextMenu("Time/Noon")]
+    void DebugNoon() => JumpTo(GameCalendar.SolarNoonHour);
 
-    [ContextMenu("Set Dusk")]
-    void DebugDusk() => SetTime(19f);
+    [ContextMenu("Time/Dusk")]
+    void DebugDusk() => JumpTo(DuskHour - 0.5f);
 
-    [ContextMenu("Set Night")]
-    void DebugNight() => SetTime(22f);
+    [ContextMenu("Time/Night")]
+    void DebugNight() => JumpTo(Mathf.Repeat(DuskHour + 2f, 24f));
+
+    [ContextMenu("Time/Skip A Day")]
+    void DebugSkipDay() => Jump(() => AdvanceDays(1, 7.5f));
+
+    [ContextMenu("Time/Skip A Season")]
+    void DebugSkipSeason() => Jump(() => AdvanceDays(GameCalendar.DaysPerSeason));
+
+    void JumpTo(float hour) => Jump(() => SetTime(hour));
+
+    void Jump(Action change)
+    {
+        change();
+#if UNITY_EDITOR
+        if (!Application.isPlaying)
+            UnityEditor.EditorUtility.SetDirty(this);
+#endif
+    }
 
     void Awake()
     {
         calendar = PreviewClock();
         live = true;
-        if (upcoming.Count == 0)
-        {
-            upcoming.Add(new TournamentInfo
-            {
-                Id = "saturday-classic",
-                Name = "Saturday Morning Classic",
-                WhenLabel = "Sat 6:00 AM",
-                FormatLabel = "Best 5 bass"
-            });
-            upcoming.Add(new TournamentInfo
-            {
-                Id = "tuesday-evening",
-                Name = "Tuesday Evening Bass",
-                WhenLabel = "Tue 5:00 PM",
-                FormatLabel = "Biggest bass"
-            });
-        }
     }
 
     void Start()
@@ -218,9 +230,12 @@ public class WorldConditions : MonoBehaviour
 
     void Update()
     {
-        int wrapped = calendar.Tick(Time.deltaTime, RealMinutesPerDay);
-        if (wrapped > 0)
-            DayChanged?.Invoke(calendar.DayIndex);
+        if (!HoldClock)
+        {
+            int wrapped = calendar.Tick(Time.deltaTime, RealMinutesPerDay);
+            if (wrapped > 0)
+                DayChanged?.Invoke(calendar.DayIndex);
+        }
 
         if (player == null)
             FindPlayer();
@@ -391,15 +406,6 @@ public class WorldConditions : MonoBehaviour
                     continue;
                 structure.Add(renderer);
             }
-        }
-    }
-
-    public void ToggleRegistration(string tournamentId)
-    {
-        for (int i = 0; i < upcoming.Count; i++)
-        {
-            if (upcoming[i].Id == tournamentId)
-                upcoming[i].Registered = !upcoming[i].Registered;
         }
     }
 

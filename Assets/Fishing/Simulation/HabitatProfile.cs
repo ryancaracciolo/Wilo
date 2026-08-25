@@ -31,6 +31,26 @@ public class HabitatProfile : ScriptableObject
     [Tooltip("Weak extra occupancy on a clean break. Bigger fish prefer it; it is not a school.")]
     [Range(0f, 0.3f)] public float dropoffSolo = 0.08f;
 
+    [Header("Points and shoals")]
+    [Tooltip("Boost on cover that sits on a point or shoal instead of a straight bank.")]
+    [Range(0f, 2.5f)] public float pointWeight = 0.9f;
+    [Tooltip("Occupancy a bare point or shoal holds with no rock, wood or weeds on it.")]
+    [Range(0f, 0.4f)] public float pointSolo = 0.16f;
+    [Tooltip("Ring radius used to tell a point from a flat. Roughly the size of shoal you want to matter.")]
+    public float pointSampleMeters = 18f;
+    [Tooltip("How much deeper the surrounding ring must be for a full point reading, in gameplay feet.")]
+    public float pointStrongFeet = 10f;
+
+    [Header("Lure depth — bass feed up")]
+    [Tooltip("How far a bass will rise for a lure above it, in gameplay feet at reference clarity.")]
+    public float lureRiseFeet = 9f;
+    [Tooltip("How far a bass will drop for a lure passing under it. Keep this well below the rise.")]
+    public float lureSinkFeet = 6f;
+    [Tooltip("Gameplay feet a bass shifts without thinking. Keeps a bait crawling the bed in the window of a fish holding just off it.")]
+    public float lureSlackFeet = 2f;
+    [Tooltip("Water visibility that gives the full rise. Clear water reaches further, stained water less.")]
+    public float clarityReferenceMeters = 10f;
+
     [Header("Size taste — 0 is small, 1 is trophy")]
     [Range(0.2f, 2f)] public float smallVegMul = 1.35f;
     [Range(0.2f, 2f)] public float largeVegMul = 0.38f;
@@ -98,6 +118,30 @@ public class HabitatProfile : ScriptableObject
         return null;
     }
 
+    /// <summary>
+    /// How well a lure sits in a fish's window. Positive feet means the lure is
+    /// above the fish, which bass strongly prefer; below is a much tighter window.
+    /// </summary>
+    public float LureDepthFit(float lureAboveFeet, float visibilityMeters)
+    {
+        float clarity = Mathf.Clamp(
+            visibilityMeters / Mathf.Max(1f, clarityReferenceMeters),
+            0.45f,
+            1.8f);
+        float reach = lureAboveFeet >= 0f
+            ? Mathf.Max(0.5f, lureRiseFeet * clarity)
+            : Mathf.Max(0.3f, lureSinkFeet * clarity);
+
+        // A bass moves a couple of feet without thinking about it. Without this
+        // a jig on the bed is punished for a fish that is holding right over it.
+        float gap = Mathf.Abs(lureAboveFeet) - Mathf.Min(lureSlackFeet, reach * 0.5f);
+        if (gap <= 0f)
+            return 1f;
+
+        float t = gap / reach;
+        return 1f / (1f + t * t);
+    }
+
     public float SaturateVegetation(float rawCount)
     {
         float k = Mathf.Max(0.05f, vegetationGather);
@@ -112,11 +156,13 @@ public class HabitatProfile : ScriptableObject
         if (taste == null)
             return Mathf.Lerp(min, trophy, Mathf.Clamp01(u) * 0.35f);
 
+        Span<float> weights = stackalloc float[SizeKnots.Length];
         float total = 0f;
         for (int i = 0; i < SizeKnots.Length; i++)
         {
             float t = SizeKnots[i];
-            total += SizePrior(t) * OccupancyAt(taste, features, t);
+            weights[i] = SizePrior(t) * OccupancyAt(taste, features, t);
+            total += weights[i];
         }
 
         float sizeT;
@@ -125,22 +171,40 @@ public class HabitatProfile : ScriptableObject
         else
         {
             float pick = Mathf.Clamp01(u) * total;
-            sizeT = SizeKnots[SizeKnots.Length - 1];
+            int index = SizeKnots.Length - 1;
             for (int i = 0; i < SizeKnots.Length; i++)
             {
-                float t = SizeKnots[i];
-                pick -= SizePrior(t) * OccupancyAt(taste, features, t);
-                if (pick > 0f)
-                    continue;
-                sizeT = t;
-                break;
+                if (pick <= weights[i])
+                {
+                    index = i;
+                    break;
+                }
+
+                pick -= weights[i];
             }
+
+            // Spread the knot's mass across its band so weights land on a
+            // continuous range instead of snapping to seven values.
+            float within = weights[index] > 0.0001f ? Mathf.Clamp01(pick / weights[index]) : 0.5f;
+            sizeT = Mathf.Lerp(BandLow(index), BandHigh(index), within);
         }
 
-        sizeT = Mathf.Clamp01(sizeT + (Mathf.Clamp01(v) - 0.5f) * 0.08f);
+        sizeT = Mathf.Clamp01(sizeT);
         float pounds = min + (trophy - min) * sizeT;
-        pounds *= 1f + (Mathf.Clamp01(v) - 0.5f) * 0.04f;
+        pounds *= 1f + (Mathf.Clamp01(v) - 0.5f) * 0.05f;
         return Mathf.Clamp(pounds, min, trophy);
+    }
+
+    static float BandLow(int index)
+    {
+        return index <= 0 ? 0f : (SizeKnots[index - 1] + SizeKnots[index]) * 0.5f;
+    }
+
+    static float BandHigh(int index)
+    {
+        return index >= SizeKnots.Length - 1
+            ? 1f
+            : (SizeKnots[index] + SizeKnots[index + 1]) * 0.5f;
     }
 
     void OnValidate()
@@ -149,6 +213,12 @@ public class HabitatProfile : ScriptableObject
         maxFishPerThousandSqMeters = Mathf.Max(baseFishPerThousandSqMeters, maxFishPerThousandSqMeters);
         rockPeakWidthFeet = Mathf.Max(1f, rockPeakWidthFeet);
         rockTrophyDepthFeet = Mathf.Max(rockPeakDepthFeet, rockTrophyDepthFeet);
+        pointSampleMeters = Mathf.Clamp(pointSampleMeters, 4f, 60f);
+        pointStrongFeet = Mathf.Max(1f, pointStrongFeet);
+        lureRiseFeet = Mathf.Max(1f, lureRiseFeet);
+        lureSinkFeet = Mathf.Clamp(lureSinkFeet, 0.5f, lureRiseFeet);
+        lureSlackFeet = Mathf.Clamp(lureSlackFeet, 0f, lureSinkFeet);
+        clarityReferenceMeters = Mathf.Max(1f, clarityReferenceMeters);
         coverRadiusMeters = Mathf.Clamp(coverRadiusMeters, 4f, 16f);
         woodHugMeters = Mathf.Clamp(woodHugMeters, 1f, 4f);
         rockReachMeters = Mathf.Clamp(rockReachMeters, 0.8f, 6f);
@@ -191,11 +261,16 @@ public class HabitatProfile : ScriptableObject
         float rock = rockWeight * taste.rock * features.Rock * RockDepthGate(feet, sizeT) * Mathf.Lerp(smallRockMul, largeRockMul, sizeT);
         float cover = wood + veg + rock;
         float sat = 1f - Mathf.Exp(-cover * Mathf.Max(0.15f, structureSoftness));
-        float breakTaste = taste.dropoff * features.Dropoff * Mathf.Lerp(smallDropoffMul, largeDropoffMul, sizeT);
-        float breakMul = 1f + dropoffWeight * breakTaste;
-        float breakWhisper = dropoffSolo * breakTaste;
+
+        // Bare terrain: bigger fish read a break or a point harder than small ones.
+        float terrainTaste = Mathf.Lerp(smallDropoffMul, largeDropoffMul, sizeT);
+        float breakTaste = taste.dropoff * features.Dropoff * terrainTaste;
+        float pointTaste = taste.point * Mathf.Max(0f, features.Convexity) * terrainTaste;
+
+        float terrainMul = 1f + dropoffWeight * breakTaste + pointWeight * pointTaste;
+        float whisper = dropoffSolo * breakTaste + pointSolo * pointTaste;
         float scatter = openWaterScatter * Mathf.Pow(1f - sizeT, 2.2f);
-        return envelope * (sat * breakMul + breakWhisper + scatter);
+        return envelope * (sat * terrainMul + whisper + scatter);
     }
 
     static float DepthEnvelope(SpeciesHabitat taste, float feet, float sizeT)
@@ -245,6 +320,8 @@ public class SpeciesHabitat
     public float minDepthFeet = 2f;
     public float maxDepthFeet = 35f;
     [Range(0f, 2f)] public float dropoff = 1f;
+    [Tooltip("How hard this species relates to points and shoals with no cover on them.")]
+    [Range(0f, 2f)] public float point = 1f;
     [Range(0f, 2f)] public float rock = 1f;
     [Range(0f, 2.5f)] public float wood = 1f;
     [Range(0f, 2f)] public float vegetation = 1f;

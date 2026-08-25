@@ -19,7 +19,7 @@ public class TackleBox : MonoBehaviour
     void Awake()
     {
         if (lures.Count == 0)
-            lures.AddRange(CreateStarterLures());
+            AddStarterLures();
         if (equipped == null && lures.Count > 0)
             equipped = lures[0];
     }
@@ -34,25 +34,20 @@ public class TackleBox : MonoBehaviour
         Changed?.Invoke();
     }
 
-    public static List<LureDefinition> CreateStarterLures()
+    void AddStarterLures()
     {
-        return new List<LureDefinition>
+        ContentRegistry registry = ContentRegistry.Instance;
+        if (registry == null)
         {
-            Make("Worm", "Soft and simple. Slow along the bottom.", new Color(0.45f, 0.28f, 0.42f), LureKind.Worm, 0.16f),
-            Make("Spinnerbait", "Flash and vibration. Counts down through the column.", new Color(0.85f, 0.78f, 0.28f), LureKind.Spinnerbait, 0.55f),
-            Make("Jig", "Heavy. Drops fast and stays on the bottom.", new Color(0.72f, 0.55f, 0.18f), LureKind.Jig, 1.85f)
-        };
-    }
+            Debug.LogError("TackleBox: no ContentRegistry in Resources, so the box stays empty.", this);
+            return;
+        }
 
-    static LureDefinition Make(string name, string hint, Color color, LureKind kind, float sinkSpeed)
-    {
-        var lure = ScriptableObject.CreateInstance<LureDefinition>();
-        lure.name = name;
-        lure.DisplayName = name;
-        lure.Hint = hint;
-        lure.Color = color;
-        lure.Kind = kind;
-        lure.SinkSpeed = sinkSpeed;
-        return lure;
+        IReadOnlyList<LureDefinition> starters = registry.StarterLures;
+        for (int i = 0; i < starters.Count; i++)
+        {
+            if (starters[i] != null)
+                lures.Add(starters[i]);
+        }
     }
 }

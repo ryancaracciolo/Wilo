@@ -12,6 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7b351119c9a3948fda5f6565fc20f3a4, type: 3}
   m_Name: Species_Smallmouth
   m_EditorClassIdentifier: Assembly-CSharp::FishSpecies
+  Id: smallmouth
   DisplayName: Smallmouth
   Prefab: {fileID: 9138964961810934252, guid: aa01b06f2c1514962a3c3a2f38390171, type: 3}
   TypicalPounds: 2.2

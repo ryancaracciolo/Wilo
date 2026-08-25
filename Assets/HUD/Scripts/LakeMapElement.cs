@@ -179,7 +179,7 @@ public class LakeMapElement : VisualElement
         if (evt.button != 0)
             return;
 
-        HudInput.PointerOverUi = true;
+        HudInput.NotifyUiPointerDown();
         evt.StopPropagation();
 
         if (!panZoom)

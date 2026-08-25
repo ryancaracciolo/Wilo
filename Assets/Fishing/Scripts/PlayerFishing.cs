@@ -28,11 +28,17 @@ public class PlayerFishing : MonoBehaviour
     [SerializeField] float keyboardAimPixelsPerSecond = 520f;
     [SerializeField] float maxYawOffset = 80f;
     [SerializeField] float flyDuration = 0.7f;
-    [SerializeField] float retrieveSpeed = 9f;
+    [SerializeField] float retrieveSpeed = 7.5f;
     [SerializeField] float retrieveLiftDistance = 1.65f;
     [SerializeField] float doubleClickWindow = 0.32f;
     [SerializeField] float arcHeight = 3.15f;
     [SerializeField] Vector3 castOriginOffset = new Vector3(0f, 1.15f, 0.2f);
+
+    /// <summary>
+    /// How quickly a lure settles onto its ride depth once reeling starts. Fast
+    /// enough that a tap of the reel reads as a pop rather than a long climb.
+    /// </summary>
+    const float RideTrackSpeed = 6f;
 
     [Header("Lure")]
     [SerializeField] float lureClearance = 0.1f;
@@ -52,6 +58,8 @@ public class PlayerFishing : MonoBehaviour
         ignoreCastFrame = Time.frameCount;
         if (phase == Phase.Aiming)
             CancelAim();
+        else if (phase == Phase.Flying && flyTime < 0.2f)
+            EndFishing();
     }
 
     PlayerMotor motor;
@@ -91,6 +99,15 @@ public class PlayerFishing : MonoBehaviour
     int ignoreCastFrame = -1;
     Quaternion catchFacingSaved;
     bool catchFacingStored;
+
+    /// <summary>True while a cast lure is riding in the water column.</summary>
+    public bool LureInWater { get; private set; }
+
+    /// <summary>How deep the lure is running, in gameplay feet.</summary>
+    public float LureDepthFeet { get; private set; }
+
+    /// <summary>Bed depth under the lure, in gameplay feet.</summary>
+    public float LureBedFeet { get; private set; }
 
     void Awake()
     {
@@ -158,18 +175,29 @@ public class PlayerFishing : MonoBehaviour
         UpdateLine();
     }
 
+    void LateUpdate()
+    {
+        if (!HudInput.AteWorldClick)
+            return;
+        CancelCastClick();
+    }
+
     bool WasCastPressed()
     {
+        // The key never routes through the HUD, so it stays live even while the
+        // pointer is busy up there.
+        if (Keyboard.current != null && Keyboard.current.cKey.wasPressedThisFrame)
+            return true;
+
         if (Time.frameCount <= ignoreCastFrame)
             return false;
+
         if (HudInput.BlocksWorldClick)
             return false;
 
         if (attackAction != null && attackAction.WasPressedThisFrame())
             return true;
-        if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
-            return true;
-        return Keyboard.current != null && Keyboard.current.cKey.wasPressedThisFrame;
+        return Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame;
     }
 
     bool WasCastReleased()
@@ -191,9 +219,11 @@ public class PlayerFishing : MonoBehaviour
 
     bool IsCastHeld()
     {
-        if (Mouse.current != null && Mouse.current.leftButton.isPressed)
-            return true;
         if (Keyboard.current != null && Keyboard.current.cKey.isPressed)
+            return true;
+        if (HudInput.AteWorldClick)
+            return false;
+        if (Mouse.current != null && Mouse.current.leftButton.isPressed)
             return true;
         return attackAction != null && attackAction.IsPressed();
     }
@@ -278,6 +308,12 @@ public class PlayerFishing : MonoBehaviour
         pendingValid = liveOnWater;
 
         SetLiveMarker(true, livePos);
+
+        if (HudInput.AteWorldClick)
+        {
+            CancelAim();
+            return;
+        }
 
         if (!WasCastReleased() || Time.frameCount <= aimStartFrame)
             return;
@@ -391,13 +427,11 @@ public class PlayerFishing : MonoBehaviour
         float liftT = 1f - Mathf.Clamp01(remaining / retrieveLiftDistance);
         liftT = liftT * liftT * liftT;
 
-        float y = previous.y;
-        if (liftT < 0.05f)
-            y -= CurrentSinkSpeed() * Time.deltaTime;
-        else
+        float bedY = BedY(planar);
+        float y = RideY(previous.y, planar);
+        if (liftT >= 0.05f)
             y = Mathf.Lerp(y, rod.y, liftT);
 
-        float bedY = BedY(planar);
         if (liftT < 0.05f)
             y = Mathf.Clamp(y, bedY, waterHeight - 0.02f);
         else
@@ -470,6 +504,13 @@ public class PlayerFishing : MonoBehaviour
             DismissCatch();
     }
 
+    /// <summary>Drops the line and returns to idle, for when the day ends mid-cast.</summary>
+    public void AbortFishing()
+    {
+        if (phase != Phase.Idle)
+            EndFishing();
+    }
+
     public void DismissCatch()
     {
         if (phase != Phase.ShowingCatch)
@@ -519,9 +560,24 @@ public class PlayerFishing : MonoBehaviour
             (phase == Phase.InWater || phase == Phase.Retrieving) &&
             lureObject != null && lureObject.activeSelf;
         if (inPlay)
-            lake.Lure.Set(lureObject.transform.position);
-        else if (hooked == null)
+        {
+            Vector3 at = lureObject.transform.position;
+            lake.Lure.Set(at, Equipped());
+            TrackLureDepth(at);
+            return;
+        }
+
+        LureInWater = false;
+        if (hooked == null)
             lake.Lure.Clear();
+    }
+
+    void TrackLureDepth(Vector3 at)
+    {
+        float scale = lake.Conditions != null ? lake.Conditions.GameplayDepthScale : 0.5f;
+        LureInWater = at.y <= waterHeight + 0.05f;
+        LureDepthFeet = Mathf.Max(0f, (waterHeight - at.y) * scale * 3.28084f);
+        LureBedFeet = lake.DepthMeters(at) * 3.28084f;
     }
 
     void LandCatch(FishAgent fish)
@@ -782,8 +838,8 @@ public class PlayerFishing : MonoBehaviour
             return;
 
         Vector3 pos = lureObject.transform.position;
-        float bedY = BedY(pos);
-        float nextY = Mathf.Clamp(pos.y - CurrentSinkSpeed() * Time.deltaTime, bedY, waterHeight - 0.02f);
+        float restY = RestY(pos);
+        float nextY = Mathf.Clamp(pos.y - CurrentSinkSpeed() * Time.deltaTime, restY, waterHeight - 0.02f);
         pos.y = nextY;
         lureObject.transform.position = pos;
     }
@@ -800,10 +856,66 @@ public class PlayerFishing : MonoBehaviour
             1f - Mathf.Exp(-8f * Time.deltaTime));
     }
 
+    LureDefinition Equipped() => tackle != null ? tackle.Equipped : null;
+
+    /// <summary>
+    /// Where the lure wants to sit in the column while it is being reeled.
+    /// Holding depth means a countdown decides the running depth; the other
+    /// rides pin themselves to the bed, a set band, or the surface.
+    /// </summary>
+    float RideY(float currentY, Vector3 planar)
+    {
+        LureDefinition lure = Equipped();
+        if (lure == null)
+            return currentY;
+
+        float step = RideTrackSpeed * Time.deltaTime;
+        switch (lure.Ride)
+        {
+            case LureRide.Bottom:
+                // Reeling lifts a bottom bait and letting go drops it, so tapping
+                // the reel hops it along instead of dragging it the whole way.
+                return Mathf.MoveTowards(currentY, RestY(planar) + RideOffsetMeters(lure.HopFeet), step);
+            case LureRide.Surface:
+                return Mathf.MoveTowards(currentY, waterHeight - 0.02f, step);
+            case LureRide.FixedBand:
+                return Mathf.MoveTowards(currentY, waterHeight - RideOffsetMeters(lure.RideDepthFeet), step);
+            default:
+                return currentY;
+        }
+    }
+
+    /// <summary>Where the lure settles when nobody is reeling. Bottom rides keep their clearance.</summary>
+    float RestY(Vector3 world)
+    {
+        float bedY = BedY(world);
+        LureDefinition lure = Equipped();
+        if (lure != null && lure.Ride == LureRide.Bottom)
+            bedY += RideOffsetMeters(lure.RideDepthFeet);
+        return bedY;
+    }
+
+    /// <summary>Ride offsets are authored in gameplay feet; the world runs on true metres.</summary>
+    float RideOffsetMeters(float feet)
+    {
+        if (feet <= 0f)
+            return 0f;
+
+        float scale = lake != null && lake.Conditions != null ? lake.Conditions.GameplayDepthScale : 0.5f;
+        return feet / 3.28084f / Mathf.Max(0.05f, scale);
+    }
+
     float CurrentSinkSpeed()
     {
-        LureDefinition lure = tackle != null ? tackle.Equipped : null;
-        return lure != null ? lure.SinkSpeed : 0.35f;
+        LureDefinition lure = Equipped();
+        float rate = lure != null ? lure.SinkSpeed : 0.35f;
+
+        // The bed sits at true geometric depth while the player reads gameplay
+        // feet, so fall fast enough to match the depth shown on the sonar.
+        float scale = lake != null && lake.Conditions != null
+            ? lake.Conditions.GameplayDepthScale
+            : 0.5f;
+        return rate / Mathf.Clamp(scale, 0.15f, 1f);
     }
 
     float BedY(Vector3 world)
@@ -969,13 +1081,15 @@ public class PlayerFishing : MonoBehaviour
 
         public void SetVisible(bool visible)
         {
-            if (root.activeSelf != visible)
+            // Scene teardown can destroy the marker before OnDisable runs.
+            if (root != null && root.activeSelf != visible)
                 root.SetActive(visible);
         }
 
         public void SetPosition(Vector3 world)
         {
-            root.transform.position = world;
+            if (root != null)
+                root.transform.position = world;
         }
 
         public void SetScale(float scale)

@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5b1c68de5d9345ba899286cc063b730c, type: 3}
+  m_Name: ContentRegistry
+  m_EditorClassIdentifier: Assembly-CSharp::ContentRegistry
+  lures:
+  - {fileID: 11400000, guid: b5a0b85c10f304ba0b2c3a1c603d6096, type: 2}
+  - {fileID: 11400000, guid: 30c1966daf6e54e29aa34a11194d4483, type: 2}
+  - {fileID: 11400000, guid: 80b36d0715eeb4d8bb18c649f34ce74b, type: 2}
+  - {fileID: 11400000, guid: cb4e235d40841490e9079a6141ca1bed, type: 2}
+  - {fileID: 11400000, guid: 7eca6bb6205a243d0a4b53b80afbc7c2, type: 2}
+  - {fileID: 11400000, guid: e61c031a20f124c20add98c496ff23cb, type: 2}
+  species:
+  - {fileID: 11400000, guid: 1c8e891a535284035976b95ff485fd14, type: 2}
+  - {fileID: 11400000, guid: 6698b3b9170324a3dac0e050c5a90b89, type: 2}
+  tournaments:
+  - {fileID: 11400000, guid: 84bcd10ff92e24dd183ce5e36acc54c9, type: 2}
+  - {fileID: 11400000, guid: 86f17d716a9144973a266ff68a9d7aff, type: 2}
+  starterLures:
+  - {fileID: 11400000, guid: b5a0b85c10f304ba0b2c3a1c603d6096, type: 2}
+  - {fileID: 11400000, guid: 30c1966daf6e54e29aa34a11194d4483, type: 2}
+  - {fileID: 11400000, guid: 80b36d0715eeb4d8bb18c649f34ce74b, type: 2}

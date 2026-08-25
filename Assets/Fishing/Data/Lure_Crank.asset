@@ -1,0 +1,25 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: da166cf70adb14e4fb6554285be9c16d, type: 3}
+  m_Name: Lure_Crank
+  m_EditorClassIdentifier: Assembly-CSharp::LureDefinition
+  Id: crank
+  DisplayName: Crankbait
+  Hint: Digs to its own depth and holds there. Good for hunting a break.
+  Color: {r: 0.36, g: 0.62, b: 0.52, a: 1}
+  Kind: 3
+  SinkSpeed: 0.4
+  Ride: 2
+  RideDepthFeet: 14
+  HopFeet: 0
+  DrawDistance: 6
+  WorksAtRest: 0.2

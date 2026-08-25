@@ -12,8 +12,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: da166cf70adb14e4fb6554285be9c16d, type: 3}
   m_Name: Lure_Jig
   m_EditorClassIdentifier: Assembly-CSharp::LureDefinition
+  Id: jig
   DisplayName: Jig
-  Hint: Heavy. Drops fast and stays on the bottom.
+  Hint: Heavy. Drops fast and crawls the bottom.
   Color: {r: 0.72, g: 0.55, b: 0.18, a: 1}
   Kind: 2
   SinkSpeed: 1.85
+  Ride: 1
+  RideDepthFeet: 0.2
+  HopFeet: 2.5
+  DrawDistance: 3
+  WorksAtRest: 0.8

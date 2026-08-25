@@ -12,8 +12,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: da166cf70adb14e4fb6554285be9c16d, type: 3}
   m_Name: Lure_Spinner
   m_EditorClassIdentifier: Assembly-CSharp::LureDefinition
+  Id: spinner
   DisplayName: Spinnerbait
-  Hint: Flash and vibration. Counts down through the column.
+  Hint: Flash and vibration. Covers water fast to find them.
   Color: {r: 0.85, g: 0.78, b: 0.28, a: 1}
   Kind: 1
   SinkSpeed: 0.55
+  Ride: 0
+  RideDepthFeet: 0
+  HopFeet: 0
+  DrawDistance: 6.5
+  WorksAtRest: 0.2

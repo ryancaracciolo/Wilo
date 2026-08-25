@@ -3,6 +3,9 @@ using UnityEngine;
 [CreateAssetMenu(menuName = "Wilo/Fish Species", fileName = "Species")]
 public class FishSpecies : ScriptableObject
 {
+    [Tooltip("Stable key. Save data refers to this, so do not rename it casually.")]
+    public string Id = "";
+
     public string DisplayName = "Bass";
     public GameObject Prefab;
     public float TypicalPounds = 2.5f;

@@ -12,6 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7b351119c9a3948fda5f6565fc20f3a4, type: 3}
   m_Name: Species_Largemouth
   m_EditorClassIdentifier: Assembly-CSharp::FishSpecies
+  Id: largemouth
   DisplayName: Largemouth
   Prefab: {fileID: 8255601992955848233, guid: 205a901971c654e38b593afb9f4cf97a, type: 3}
   TypicalPounds: 3.5

@@ -24,6 +24,15 @@ public class LurePlaceholder : MonoBehaviour
             case LureKind.Jig:
                 BuildJig(color);
                 break;
+            case LureKind.Crankbait:
+                BuildCrankbait(color);
+                break;
+            case LureKind.Topwater:
+                BuildTopwater(color);
+                break;
+            case LureKind.Dropshot:
+                BuildDropshot(color);
+                break;
             default:
                 BuildWorm(color);
                 break;
@@ -84,6 +93,59 @@ public class LurePlaceholder : MonoBehaviour
             new Vector3(0.14f, 0.22f, 0.14f),
             Quaternion.identity,
             color);
+    }
+
+    void BuildCrankbait(Color color)
+    {
+        Color lip = new Color(0.82f, 0.86f, 0.9f, 1f);
+        AddPart(PrimitiveType.Sphere, Vector3.zero, new Vector3(0.15f, 0.14f, 0.24f), Quaternion.identity, color);
+        AddPart(
+            PrimitiveType.Sphere,
+            new Vector3(0f, -0.01f, -0.14f),
+            new Vector3(0.09f, 0.09f, 0.1f),
+            Quaternion.identity,
+            Color.Lerp(color, Color.black, 0.2f));
+        AddPart(
+            PrimitiveType.Cube,
+            new Vector3(0f, -0.06f, 0.16f),
+            new Vector3(0.11f, 0.012f, 0.11f),
+            Quaternion.Euler(38f, 0f, 0f),
+            lip);
+    }
+
+    void BuildTopwater(Color color)
+    {
+        AddPart(PrimitiveType.Sphere, Vector3.zero, new Vector3(0.11f, 0.11f, 0.34f), Quaternion.identity, color);
+        AddPart(
+            PrimitiveType.Cylinder,
+            new Vector3(0f, 0f, 0.17f),
+            new Vector3(0.1f, 0.012f, 0.1f),
+            Quaternion.Euler(90f, 0f, 0f),
+            Color.Lerp(color, Color.white, 0.55f));
+        AddPart(
+            PrimitiveType.Sphere,
+            new Vector3(0f, 0.02f, -0.19f),
+            new Vector3(0.09f, 0.05f, 0.1f),
+            Quaternion.identity,
+            new Color(0.92f, 0.9f, 0.84f));
+    }
+
+    void BuildDropshot(Color color)
+    {
+        Color lead = new Color(0.32f, 0.31f, 0.3f);
+        AddPart(PrimitiveType.Sphere, new Vector3(0f, 0.13f, 0f), new Vector3(0.07f, 0.07f, 0.3f), Quaternion.identity, color);
+        AddPart(
+            PrimitiveType.Cube,
+            new Vector3(0f, 0.04f, 0f),
+            new Vector3(0.008f, 0.16f, 0.008f),
+            Quaternion.identity,
+            new Color(0.88f, 0.86f, 0.8f));
+        AddPart(
+            PrimitiveType.Sphere,
+            new Vector3(0f, -0.07f, 0f),
+            new Vector3(0.06f, 0.11f, 0.06f),
+            Quaternion.identity,
+            lead);
     }
 
     GameObject AddPart(PrimitiveType type, Vector3 localPos, Vector3 localScale, Quaternion localRot, Color color)

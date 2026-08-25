@@ -1,9 +1,13 @@
+using System;
 using UnityEngine;
 
 /// <summary>
-/// One landed fish. Marked records are for the later lake-map journal;
-/// every catch is kept so a history can use the same data.
+/// One landed fish. Marked records are for the lake-map journal; every catch is
+/// kept so a history can use the same data.
+/// Serialized straight into the save file, so these fields are a save format:
+/// keep them flat and plain, and do not rename them casually.
 /// </summary>
+[Serializable]
 public class CatchRecord
 {
     public string SpeciesName;

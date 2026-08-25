@@ -2,7 +2,7 @@
 
 ## Project notes
 
-Gameplay depth is `WorldConditions.gameplayDepthScale` (default 0.5): sonar, map colors, and fishing use scaled depth; fish still sit on the visual lake bed — do not reshape the terrain to make the lake shallower.
+Gameplay depth is `WorldConditions.gameplayDepthScale` (default 0.4): sonar, map colors, and fishing use scaled depth; fish still sit on the visual lake bed — do not reshape the terrain to make the lake shallower.
 
 This is the target design, not a build checklist. Implement only what the current task requires. Do not create systems, classes, components, or attributes solely because they are described here.
 
