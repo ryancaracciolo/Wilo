@@ -47,6 +47,16 @@ public class LakeSimulation : MonoBehaviour
         return conditions != null ? conditions.BedDepthMeters(world) : 0f;
     }
 
+    /// <summary>
+    /// Depth to the shallowest thing a lure can touch, so rock and timber turn
+    /// into something to climb over rather than swim through. Habitat and depth
+    /// readouts stay on the bare bed: a hole with a boulder in it is still a hole.
+    /// </summary>
+    public float LureBottomMeters(Vector3 world)
+    {
+        return conditions != null ? conditions.GeometricDepthMeters(world) : 0f;
+    }
+
     public float DepthMeters(Vector3 world)
     {
         if (conditions == null)

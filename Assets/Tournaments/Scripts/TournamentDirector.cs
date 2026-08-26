@@ -358,6 +358,58 @@ public class TournamentDirector : MonoBehaviour
         return false;
     }
 
+    /// <summary>True when the player can sleep straight through to this event.</summary>
+    public bool CanSkipTo(TournamentOccurrence occurrence)
+    {
+        if (!occurrence.IsValid || Phase != TournamentPhase.Idle)
+            return false;
+        if (conditions == null || dayCycle == null || dayCycle.IsTurningIn)
+            return false;
+        return occurrence.DayIndex > conditions.DayIndex;
+    }
+
+    /// <summary>Entries a skip past this day would drop, nearest first.</summary>
+    public void RegistrationsBefore(int dayIndex, List<TournamentOccurrence> into)
+    {
+        into.Clear();
+        for (int i = 0; i < registrations.Count; i++)
+        {
+            if (registrations[i].DayIndex < dayIndex)
+                into.Add(registrations[i]);
+        }
+
+        into.Sort((a, b) => a.DayIndex.CompareTo(b.DayIndex));
+    }
+
+    /// <summary>
+    /// Sleeps ahead to an event's morning. Anything entered before it is treated
+    /// as a withdrawal and refunded, since those days are never fished.
+    /// </summary>
+    public bool SkipTo(TournamentOccurrence occurrence)
+    {
+        if (!CanSkipTo(occurrence))
+            return false;
+
+        int refunded = 0;
+        for (int i = registrations.Count - 1; i >= 0; i--)
+        {
+            if (registrations[i].DayIndex >= occurrence.DayIndex)
+                continue;
+
+            TournamentDefinition dropped = registrations[i].Definition;
+            if (dropped != null)
+                refunded += dropped.EntryFee;
+            registrations.RemoveAt(i);
+        }
+
+        AdjustMoney(refunded);
+        dayCycle.SkipToDay(occurrence.DayIndex);
+        Notice?.Invoke(refunded > 0
+            ? $"Skipped ahead to {occurrence.Definition.DisplayName}. ${refunded} in entries refunded."
+            : $"Skipped ahead to {occurrence.Definition.DisplayName}.");
+        return true;
+    }
+
     /// <summary>Whether this event's window has already closed today.</summary>
     public bool HasPassed(TournamentOccurrence occurrence)
     {

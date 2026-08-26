@@ -27,7 +27,10 @@ public class LakeSave
 
     public ClockData clock = new ClockData();
 
-    /// <summary>Per-cell catch counts, which nudge how quickly a spot repopulates.</summary>
+    /// <summary>
+    /// Fish taken out of each cell today, so quitting mid-day and coming back
+    /// does not refill the water you already worked. Cleared on the day rollover.
+    /// </summary>
     public List<HarvestedCell> harvested = new List<HarvestedCell>();
 }
 

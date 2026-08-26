@@ -153,7 +153,23 @@ public class DayCycle : MonoBehaviour
     {
         if (IsTurningIn || !isActiveAndEnabled)
             return;
-        StartCoroutine(TurnInRoutine(forced));
+        StartCoroutine(NightRoutine(forced, true, 0));
+    }
+
+    /// <summary>
+    /// Sleeps straight through to a later day, as the tournament board does when
+    /// the player skips ahead. The days in between are never fished, so there is
+    /// nothing to recap; the player simply wakes up on the target morning.
+    /// </summary>
+    public void SkipToDay(int dayIndex)
+    {
+        if (IsTurningIn || !isActiveAndEnabled || conditions == null)
+            return;
+
+        int days = dayIndex - conditions.DayIndex;
+        if (days <= 0)
+            return;
+        StartCoroutine(NightRoutine(false, false, days));
     }
 
     /// <summary>Dismisses the highlights page and lets the next day begin.</summary>
@@ -179,7 +195,7 @@ public class DayCycle : MonoBehaviour
         return summary;
     }
 
-    IEnumerator TurnInRoutine(bool forced)
+    IEnumerator NightRoutine(bool forced, bool recap, int skipDays)
     {
         IsTurningIn = true;
         FadeRequested?.Invoke(1f, fadeDuration);
@@ -189,7 +205,7 @@ public class DayCycle : MonoBehaviour
         BeforeTurnIn?.Invoke();
 
         // Highlights are read off today's clock, so they run before it moves.
-        if (DayEnded != null)
+        if (recap && DayEnded != null)
         {
             continueRequested = false;
             AwaitingContinue = true;
@@ -200,7 +216,16 @@ public class DayCycle : MonoBehaviour
         }
 
         ReturnHome();
-        conditions?.AdvanceToHour(WakeHour);
+        if (skipDays > 0)
+        {
+            // Dawn moves with the date, so the wake hour is read on the day landed on.
+            conditions?.AdvanceDays(skipDays, -1f);
+            conditions?.SetTime(WakeHour);
+        }
+        else
+        {
+            conditions?.AdvanceToHour(WakeHour);
+        }
 
         // Sleeping is the save point, and the screen is already black for it.
         if (SaveService.Instance != null)

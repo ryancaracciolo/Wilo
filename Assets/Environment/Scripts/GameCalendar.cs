@@ -93,13 +93,13 @@ public struct GameCalendar
 
     public string TimeLabel => FormatHour(Hour);
 
-    public string DateLabel
+    public string DateLabel => DateLabelFor(DayIndex);
+
+    /// <summary>"Sat · Aug 3" for any day, so a schedule can date what it lists.</summary>
+    public string DateLabelFor(int dayIndex)
     {
-        get
-        {
-            ResolveMonth(out string month, out int day);
-            return $"{WeekdayAbbr[(int)Weekday]} · {month} {day}";
-        }
+        ResolveMonth(Mod(dayIndex, DaysPerYear), out string month, out int day);
+        return $"{WeekdayAbbr[(int)WeekdayFor(dayIndex)]} · {month} {day}";
     }
 
     public string SeasonLabel => Season.ToString();
@@ -167,9 +167,9 @@ public struct GameCalendar
             SetHour(wakeHour);
     }
 
-    void ResolveMonth(out string abbr, out int dayOfMonth)
+    static void ResolveMonth(int dayOfYear, out string abbr, out int dayOfMonth)
     {
-        int remaining = DayOfYear;
+        int remaining = dayOfYear;
         for (int i = 0; i < DaysInMonth.Length; i++)
         {
             int span = DaysInMonth[i];

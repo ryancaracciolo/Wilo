@@ -51,6 +51,7 @@ public class GameHud : MonoBehaviour
     CatchRecord shownCatch;
     CatchRecord selectedMarked;
     readonly List<CatchRecord> selectedCluster = new List<CatchRecord>();
+    readonly List<TournamentOccurrence> skipScratch = new List<TournamentOccurrence>();
     VisualElement mapJournalLayer;
     VisualElement mapJournalCard;
     VisualElement mapJournalDetail;
@@ -698,15 +699,14 @@ public class GameHud : MonoBehaviour
         if (CatchSheetOpen || MapJournalOpen)
             return;
         CloseLurePicker();
-        modalCard.Clear();
-        AddCardHeader("Profile", CloseAllOverlays);
+        VisualElement body = BeginCard("Profile", CloseAllOverlays);
 
         string money = progress != null ? $"${progress.Money}" : "$0";
         string name = progress != null ? progress.DisplayName : "You";
-        modalCard.Add(HudUi.Title(name));
-        modalCard.Add(HudUi.Body(money));
+        body.Add(HudUi.Title(name));
+        body.Add(HudUi.Body(money));
         if (progress != null)
-            modalCard.Add(HudUi.TextButton(progress.HasName ? "Change name" : "Set name", OpenRenameSheet));
+            body.Add(HudUi.TextButton(progress.HasName ? "Change name" : "Set name", OpenRenameSheet));
 
         var pb = new VisualElement();
         pb.AddToClassList("hud-section");
@@ -715,7 +715,7 @@ public class GameHud : MonoBehaviour
             pb.Add(HudUi.Body($"{progress.BestSpecies}  ·  {progress.BestBassPounds:0.00} lb"));
         else
             pb.Add(HudUi.Body("No trophy yet. The lake is waiting."));
-        modalCard.Add(pb);
+        body.Add(pb);
 
         var history = new VisualElement();
         history.AddToClassList("hud-section");
@@ -745,7 +745,7 @@ public class GameHud : MonoBehaviour
             }
         }
 
-        modalCard.Add(history);
+        body.Add(history);
         ShowModal();
     }
 
@@ -754,15 +754,17 @@ public class GameHud : MonoBehaviour
         if (CatchSheetOpen || MapJournalOpen)
             return;
         CloseLurePicker();
-        modalCard.Clear();
-        AddCardHeader("Tournaments", CloseAllOverlays);
+        VisualElement body = BeginCard("Tournaments", CloseAllOverlays);
 
         if (director == null)
         {
-            modalCard.Add(HudUi.Body("Nothing on the calendar just now."));
+            body.Add(HudUi.Body("Nothing on the calendar just now."));
             ShowModal();
             return;
         }
+
+        if (progress != null)
+            body.Add(HudUi.Muted($"${progress.Money} on hand"));
 
         if (director.Phase != TournamentPhase.Idle)
         {
@@ -770,50 +772,91 @@ public class GameHud : MonoBehaviour
             live.AddToClassList("hud-section");
             live.Add(HudUi.Muted("On the water now"));
             live.Add(HudUi.Body(director.StatusLine));
-            modalCard.Add(live);
+            body.Add(live);
         }
 
-        modalCard.Add(HudUi.Muted("Upcoming on Wilo Lake"));
         IReadOnlyList<TournamentOccurrence> schedule = director.Upcoming;
         if (schedule.Count == 0)
         {
-            modalCard.Add(HudUi.Body("Nothing on the calendar just now."));
+            body.Add(HudUi.Body("Nothing on the calendar just now."));
             ShowModal();
             return;
         }
 
+        // Events repeat weekly, so the board lists several runnings of the same
+        // few names. Weekend headings are what tell them apart, and a series or
+        // a circuit the player unlocks can head its own run of rows later.
+        string group = "";
         for (int i = 0; i < schedule.Count; i++)
-            modalCard.Add(MakeTournamentRow(schedule[i]));
+        {
+            string week = conditions != null
+                ? TournamentSchedule.WeekLabel(conditions.Calendar, schedule[i])
+                : "";
+            if (week.Length > 0 && week != group)
+            {
+                group = week;
+                body.Add(GroupLabel(week));
+            }
+
+            body.Add(MakeTournamentRow(schedule[i]));
+        }
 
         ShowModal();
+    }
+
+    static Label GroupLabel(string text)
+    {
+        Label label = HudUi.Muted(text);
+        label.AddToClassList("hud-group-label");
+        return label;
     }
 
     VisualElement MakeTournamentRow(TournamentOccurrence occurrence)
     {
         TournamentDefinition def = occurrence.Definition;
+        GameCalendar calendar = conditions != null ? conditions.Calendar : default;
+        bool registered = director.IsRegistered(occurrence);
+
         var row = new VisualElement();
         row.AddToClassList("hud-section");
         row.AddToClassList("hud-tourney-row");
-        row.Add(HudUi.Body(def.DisplayName));
+        if (registered)
+            row.AddToClassList("hud-tourney-row--entered");
 
-        string when = conditions != null
-            ? TournamentSchedule.WhenLabel(conditions.Calendar, occurrence)
-            : def.Weekday.ToString();
-        row.Add(HudUi.Muted($"{when}  ·  {def.FormatLabel}  ·  {def.EntryLabel}"));
-        row.Add(HudUi.Muted($"Purse ${def.PayoutFor(1)} to win  ·  {def.FieldSize + 1} anglers"));
+        var head = new VisualElement();
+        head.AddToClassList("hud-tourney-head");
+        Label name = HudUi.Body(def.DisplayName);
+        name.AddToClassList("hud-tourney-name");
+        head.Add(name);
+        if (registered)
+            head.Add(HudUi.Pill("Entered", true));
+        if (conditions != null)
+            head.Add(HudUi.Pill(TournamentSchedule.CountdownLabel(calendar, occurrence)));
+        row.Add(head);
 
-        bool registered = director.IsRegistered(occurrence);
+        row.Add(HudUi.Muted(conditions != null
+            ? TournamentSchedule.WhenLabel(calendar, occurrence)
+            : $"{def.Weekday}  ·  {def.WindowLabel}"));
+        row.Add(HudUi.Muted($"{def.FormatLabel}  ·  {def.EntryLabel}"));
+        row.Add(HudUi.Muted($"${def.PayoutFor(1)} to win  ·  {def.FieldSize + 1} anglers"));
+
+        if (!registered && !director.AffordableFee(def))
+            row.Add(HudUi.Muted("Not enough money"));
+
+        var actions = new VisualElement();
+        actions.AddToClassList("hud-tourney-actions");
         if (registered)
         {
-            row.Add(HudUi.TextButton("Withdraw", () =>
+            actions.Add(HudUi.TextButton("Withdraw", () =>
             {
                 director.Withdraw(occurrence);
+                SaveService.Instance?.Save();
                 OpenTournaments();
             }));
         }
         else if (director.CanRegister(occurrence))
         {
-            row.Add(HudUi.TextButton(def.EntryFee > 0 ? $"Enter · ${def.EntryFee}" : "Enter", () =>
+            actions.Add(HudUi.TextButton(def.EntryFee > 0 ? $"Enter · ${def.EntryFee}" : "Enter", () =>
             {
                 // The board is where a name first matters, so that is where it is asked for.
                 if (progress != null && !progress.HasName)
@@ -822,10 +865,11 @@ public class GameHud : MonoBehaviour
                     RegisterFor(occurrence);
             }, true));
         }
-        else if (!director.AffordableFee(def))
-        {
-            row.Add(HudUi.Muted("Not enough money"));
-        }
+
+        if (director.CanSkipTo(occurrence))
+            actions.Add(HudUi.TextButton("Skip to", () => OpenSkipSheet(occurrence)));
+        if (actions.childCount > 0)
+            row.Add(actions);
 
         return row;
     }
@@ -836,6 +880,61 @@ public class GameHud : MonoBehaviour
         // An entry fee has just left the wallet; don't make a crash refund it.
         SaveService.Instance?.Save();
         OpenTournaments();
+    }
+
+    /// <summary>
+    /// Skipping ahead costs the days in between, so the board says what they were
+    /// worth before the player sleeps through them.
+    /// </summary>
+    void OpenSkipSheet(TournamentOccurrence occurrence)
+    {
+        TournamentDefinition def = occurrence.Definition;
+        if (def == null || conditions == null || !director.CanSkipTo(occurrence))
+            return;
+
+        GameCalendar calendar = conditions.Calendar;
+        int days = TournamentSchedule.DaysAway(calendar, occurrence);
+        VisualElement body = BeginCard("Skip ahead", OpenTournaments);
+        body.Add(HudUi.Body($"Sleep through to the {def.DisplayName}?"));
+        body.Add(HudUi.Muted(days == 1
+            ? $"You wake on {calendar.DateLabelFor(occurrence.DayIndex)}, one day from now."
+            : $"You wake on {calendar.DateLabelFor(occurrence.DayIndex)}, {days} days from now."));
+
+        director.RegistrationsBefore(occurrence.DayIndex, skipScratch);
+        if (skipScratch.Count > 0)
+        {
+            var dropped = new VisualElement();
+            dropped.AddToClassList("hud-section");
+            dropped.Add(HudUi.Muted("Withdrawn along the way"));
+
+            int refund = 0;
+            for (int i = 0; i < skipScratch.Count; i++)
+            {
+                TournamentDefinition entered = skipScratch[i].Definition;
+                if (entered == null)
+                    continue;
+
+                refund += entered.EntryFee;
+                dropped.Add(HudUi.Body(
+                    $"{entered.DisplayName}  ·  {calendar.DateLabelFor(skipScratch[i].DayIndex)}"));
+            }
+
+            if (refund > 0)
+                dropped.Add(HudUi.Muted($"${refund} refunded"));
+            body.Add(dropped);
+        }
+
+        var actions = new VisualElement();
+        actions.AddToClassList("hud-form-actions");
+        actions.Add(HudUi.TextButton("Back", OpenTournaments));
+        actions.Add(HudUi.TextButton("Skip ahead", () =>
+        {
+            CloseAllOverlays();
+            director.SkipTo(occurrence);
+        }, true));
+        body.Add(actions);
+
+        ShowModal();
     }
 
     void OpenSignUpSheet(TournamentOccurrence occurrence)
@@ -883,9 +982,8 @@ public class GameHud : MonoBehaviour
             return;
 
         CloseLurePicker();
-        modalCard.Clear();
-        AddCardHeader(title, back);
-        modalCard.Add(HudUi.Body(prompt));
+        VisualElement body = BeginCard(title, back);
+        body.Add(HudUi.Body(prompt));
 
         var sheet = new VisualElement();
         sheet.AddToClassList("hud-section");
@@ -909,13 +1007,13 @@ public class GameHud : MonoBehaviour
         field = HudUi.NameField(seed, PlayerProgress.MaxNameLength, Submit);
         sheet.Add(field);
         sheet.Add(error);
-        modalCard.Add(sheet);
+        body.Add(sheet);
 
         var actions = new VisualElement();
         actions.AddToClassList("hud-form-actions");
         actions.Add(HudUi.TextButton("Back", back));
         actions.Add(HudUi.TextButton(confirmLabel, Submit, true));
-        modalCard.Add(actions);
+        body.Add(actions);
 
         ShowModal();
     }
@@ -926,22 +1024,21 @@ public class GameHud : MonoBehaviour
             return;
 
         CloseLurePicker();
-        modalCard.Clear();
-        AddCardHeader(result.DisplayName, CloseAllOverlays);
+        VisualElement body = BeginCard(result.DisplayName, CloseAllOverlays);
 
         if (result.Forfeited)
         {
-            modalCard.Add(HudUi.Title("Missed the weigh-in"));
-            modalCard.Add(HudUi.Body("The scales closed before you got back."));
+            body.Add(HudUi.Title("Missed the weigh-in"));
+            body.Add(HudUi.Body("The scales closed before you got back."));
         }
         else
         {
-            modalCard.Add(HudUi.Title(result.Won ? "You won!" : result.PlaceLabel));
-            modalCard.Add(HudUi.Body($"{result.Pounds:0.00} lb  ·  {result.Fish} fish"));
+            body.Add(HudUi.Title(result.Won ? "You won!" : result.PlaceLabel));
+            body.Add(HudUi.Body($"{result.Pounds:0.00} lb  ·  {result.Fish} fish"));
         }
 
         if (result.Penalty > 0.001f)
-            modalCard.Add(HudUi.Muted($"Late penalty −{result.Penalty:0.00} lb from {result.RawPounds:0.00} lb"));
+            body.Add(HudUi.Muted($"Late penalty −{result.Penalty:0.00} lb from {result.RawPounds:0.00} lb"));
 
         var purse = new VisualElement();
         purse.AddToClassList("hud-section");
@@ -949,7 +1046,7 @@ public class GameHud : MonoBehaviour
         purse.Add(HudUi.Body(result.Payout > 0 ? $"${result.Payout}" : "No payout"));
         if (result.EntryFee > 0)
             purse.Add(HudUi.Muted($"Entry was ${result.EntryFee}  ·  net {(result.Net >= 0 ? "+" : "−")}${Mathf.Abs(result.Net)}"));
-        modalCard.Add(purse);
+        body.Add(purse);
 
         if (!string.IsNullOrEmpty(result.WinnerName))
         {
@@ -957,7 +1054,7 @@ public class GameHud : MonoBehaviour
             top.AddToClassList("hud-section");
             top.Add(HudUi.Muted("Big bag"));
             top.Add(HudUi.Body($"{result.WinnerName}  ·  {result.WinnerPounds:0.00} lb"));
-            modalCard.Add(top);
+            body.Add(top);
         }
 
         ShowModal();
@@ -1040,6 +1137,24 @@ public class GameHud : MonoBehaviour
             lurePopover.style.display = DisplayStyle.None;
         if (popoverCatcher != null)
             popoverCatcher.style.display = DisplayStyle.None;
+    }
+
+    /// <summary>
+    /// Starts a fresh modal page: a pinned header over a scrolling body. Pages
+    /// fill the body, so a long one scrolls instead of squeezing its rows into
+    /// each other.
+    /// </summary>
+    VisualElement BeginCard(string title, System.Action close)
+    {
+        modalCard.Clear();
+        AddCardHeader(title, close);
+
+        var body = new ScrollView(ScrollViewMode.Vertical);
+        body.AddToClassList("hud-card-body");
+        body.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
+        body.mouseWheelScrollSize = 28f;
+        modalCard.Add(body);
+        return body;
     }
 
     void AddCardHeader(string title, System.Action close)

@@ -8,6 +8,8 @@ using UnityEngine;
 /// the active set; skipped cells never spawn.
 /// Spawn rolls come from the lake's saved world seed, so a cell keeps its
 /// sample whether you leave and return or quit and come back tomorrow.
+/// Fish taken out of a cell stay gone for the rest of the day; overnight the
+/// pressure clears and the spot is worth a cast again.
 /// </summary>
 [RequireComponent(typeof(LakeSimulation))]
 public class LocalFishPopulation : MonoBehaviour
@@ -101,6 +103,29 @@ public class LocalFishPopulation : MonoBehaviour
     {
         Prewarm();
         nextUpdateTime = 0f;
+        if (lake != null && lake.Conditions != null)
+            lake.Conditions.DayChanged += OnDayChanged;
+    }
+
+    void OnDestroy()
+    {
+        if (lake != null && lake.Conditions != null)
+            lake.Conditions.DayChanged -= OnDayChanged;
+    }
+
+    /// <summary>
+    /// Pressure only lasts the day. Overnight the fish move back into the spots
+    /// that were emptied, so yesterday's worked-over water is worth another look.
+    /// </summary>
+    void OnDayChanged(int dayIndex)
+    {
+        if (harvested.Count == 0)
+            return;
+
+        harvested.Clear();
+        // Fished-out cells are still carrying their empty mark. Drop it rather
+        // than making the player leave the area before the water refills.
+        empty.Clear();
     }
 
     void OnDisable()
@@ -209,6 +234,11 @@ public class LocalFishPopulation : MonoBehaviour
         SampleCellDensity(id, origin.y, out mean, out peak);
         float expected = (mean * 0.55f + peak * 0.45f) * (area / 1000f);
         int target = Mathf.Clamp(StochasticRound(expected, Hash01(Hash(id, 3))), 0, maxFishPerCell);
+
+        // The roll is what the cell holds on an untouched day. Whatever came out
+        // of it today comes off the top, so a spot you worked over stays thin.
+        harvested.TryGetValue(id, out int taken);
+        target -= taken;
         if (target <= 0)
         {
             empty.Add(id);
@@ -583,13 +613,11 @@ public class LocalFishPopulation : MonoBehaviour
 
     int Hash(LakeCellId id, int salt)
     {
-        harvested.TryGetValue(id, out int taken);
         unchecked
         {
             uint h = (uint)(id.X * 73856093)
                 ^ (uint)(id.Z * 19349663)
                 ^ (uint)(salt * 83492791)
-                ^ (uint)(taken * 374761393)
                 ^ (uint)(worldSeed * 1103515245);
 
             // Callers read low bits (PointInCell, yaw), and an XOR of products

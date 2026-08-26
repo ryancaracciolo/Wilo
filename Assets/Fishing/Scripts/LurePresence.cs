@@ -53,8 +53,8 @@ public class LurePresence : MonoBehaviour
     }
 
     /// <summary>
-    /// Scales how readily a fish in the zone commits. Since every lure reels at
-    /// the same speed, this is where presentation lives: a soft bait keeps
+    /// Scales how readily a fish in the zone commits. Reel speed barely varies
+    /// between baits, so this is where presentation lives: a soft bait keeps
     /// working when you stop, a blade goes dead and has to be kept moving.
     /// </summary>
     public float Liveliness

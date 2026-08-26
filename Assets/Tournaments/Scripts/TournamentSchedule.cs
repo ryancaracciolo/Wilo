@@ -73,26 +73,59 @@ public static class TournamentSchedule
         }
     }
 
-    /// <summary>"Today", "Tomorrow", or the weekday name, for schedule rows.</summary>
+    /// <summary>"Sat · Aug 3 · 7:00 AM – 4:00 PM": the dated line for a schedule row.</summary>
     public static string WhenLabel(GameCalendar calendar, TournamentOccurrence occurrence)
     {
         if (!occurrence.IsValid)
             return "";
 
-        int days = occurrence.DayIndex - calendar.DayIndex;
-        string day = days switch
+        return $"{calendar.DateLabelFor(occurrence.DayIndex)}  ·  {occurrence.Definition.WindowLabel}";
+    }
+
+    /// <summary>"Today", "Tomorrow", "In 5 days": how far off the occurrence is.</summary>
+    public static string CountdownLabel(GameCalendar calendar, TournamentOccurrence occurrence)
+    {
+        int days = DaysAway(calendar, occurrence);
+        return days switch
         {
+            < 0 => "",
             0 => "Today",
             1 => "Tomorrow",
-            _ => calendar.WeekdayFor(occurrence.DayIndex).ToString()
+            _ => $"In {days} days"
         };
+    }
 
-        return $"{day} · {GameCalendar.FormatHour(occurrence.Definition.StartHour)}";
+    /// <summary>
+    /// Heading the occurrence sits under. This is what keeps two runnings of the
+    /// same weekly event apart on a schedule that lists several of them.
+    /// </summary>
+    public static string WeekLabel(GameCalendar calendar, TournamentOccurrence occurrence)
+    {
+        if (!occurrence.IsValid)
+            return "";
+
+        int weeks = (WeekStart(calendar, occurrence.DayIndex) - WeekStart(calendar, calendar.DayIndex)) / 7;
+        return weeks switch
+        {
+            <= 0 => "This weekend",
+            1 => "Next weekend",
+            _ => $"In {weeks} weeks"
+        };
     }
 
     /// <summary>Days until the occurrence, for "in 3 days" style copy.</summary>
     public static int DaysAway(GameCalendar calendar, TournamentOccurrence occurrence)
     {
         return occurrence.IsValid ? Mathf.Max(0, occurrence.DayIndex - calendar.DayIndex) : -1;
+    }
+
+    /// <summary>
+    /// The Monday that opens the week holding a day. Cutting weeks on Monday puts
+    /// a Saturday event and the Sunday after it in one group, which is how the
+    /// player reads them, and keeps midweek pointed at the weekend ahead.
+    /// </summary>
+    static int WeekStart(GameCalendar calendar, int dayIndex)
+    {
+        return dayIndex - ((int)calendar.WeekdayFor(dayIndex) + 6) % 7;
     }
 }

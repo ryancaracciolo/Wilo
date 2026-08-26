@@ -51,6 +51,10 @@ public class LureDefinition : ScriptableObject
     [Header("Retrieve")]
     public LureRide Ride = LureRide.HoldDepth;
 
+    [Tooltip("Scales the reel speed. Below 1 for a bait that wants working slowly, above 1 to cover water.")]
+    [Range(0.4f, 1.4f)]
+    public float RetrieveScale = 1f;
+
     [Tooltip("Bottom: gameplay feet held above the bed. Fixed band: gameplay feet below the surface. Unused for the other rides.")]
     [Min(0f)]
     public float RideDepthFeet = 0f;

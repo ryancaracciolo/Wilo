@@ -314,28 +314,64 @@
 
 .hud-card {
     width: 420px;
-    max-height: 520px;
+    max-height: 600px;
     padding: 22px 24px 20px 24px;
     border-radius: 24px;
     border-width: 3px;
     border-color: rgb(212, 180, 131);
     background-color: rgb(255, 248, 236);
+    overflow: hidden;
 }
 
 .hud-card-header {
+    flex-shrink: 0;
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
     margin-bottom: 12px;
 }
 
+.hud-card-body {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-height: 0;
+}
+
+.hud-card-body .unity-scroll-view__vertical-scroller {
+    width: 10px;
+    margin-left: 6px;
+    border-width: 0;
+    background-color: rgba(0, 0, 0, 0);
+}
+
+.hud-card-body .unity-base-slider__tracker {
+    border-width: 0;
+    background-color: rgba(0, 0, 0, 0);
+}
+
+.hud-card-body .unity-base-slider__dragger {
+    width: 8px;
+    margin-left: 0;
+    border-width: 0;
+    border-radius: 5px;
+    background-color: rgb(212, 180, 131);
+}
+
+.hud-card-body .unity-scroller__low-button,
+.hud-card-body .unity-scroller__high-button {
+    display: none;
+}
+
 .hud-title {
+    flex-shrink: 0;
     font-size: 22px;
     color: rgb(76, 61, 47);
     -unity-font-style: bold;
 }
 
+/* Labels keep their height: squeezed rows would draw their text over each other. */
 .hud-body {
+    flex-shrink: 0;
     font-size: 15px;
     color: rgb(76, 61, 47);
     -unity-font-style: bold;
@@ -344,11 +380,28 @@
 }
 
 .hud-muted {
+    flex-shrink: 0;
     font-size: 13px;
     color: rgb(138, 116, 96);
     -unity-font-style: bold;
     margin-bottom: 10px;
     white-space: normal;
+}
+
+.hud-pill {
+    flex-shrink: 0;
+    margin-left: 6px;
+    padding: 2px 9px;
+    border-radius: 10px;
+    background-color: rgb(255, 248, 236);
+    color: rgb(138, 116, 96);
+    font-size: 11px;
+    -unity-font-style: bold;
+}
+
+.hud-pill--on {
+    background-color: rgb(78, 156, 148);
+    color: rgb(255, 248, 236);
 }
 
 .hud-close {
@@ -363,6 +416,7 @@
 }
 
 .hud-section {
+    flex-shrink: 0;
     margin-top: 8px;
     margin-bottom: 6px;
     padding: 12px 14px;
@@ -370,11 +424,57 @@
     background-color: rgb(244, 226, 198);
 }
 
+/* Heading a run of rows, such as a weekend or, later, a series. */
+.hud-group-label {
+    margin-top: 14px;
+    margin-bottom: 0;
+    margin-left: 2px;
+    font-size: 12px;
+}
+
 .hud-tourney-row {
-    margin-bottom: 10px;
+    margin-top: 6px;
+    margin-bottom: 8px;
+    padding: 10px 12px 8px 12px;
+}
+
+.hud-tourney-row--entered {
+    border-width: 2px;
+    border-color: rgb(78, 156, 148);
+}
+
+.hud-tourney-head {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 3px;
+}
+
+.hud-tourney-name {
+    flex-grow: 1;
+    flex-shrink: 1;
+    margin-bottom: 0;
+    font-size: 16px;
+}
+
+.hud-tourney-row > .hud-muted {
+    margin-bottom: 1px;
+}
+
+.hud-tourney-actions {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 2px;
+}
+
+.hud-tourney-actions > .hud-text-button {
+    height: 28px;
+    margin-top: 6px;
+    margin-right: 8px;
 }
 
 .hud-text-button {
+    flex-shrink: 0;
     height: 32px;
     margin-top: 8px;
     padding: 0 14px;

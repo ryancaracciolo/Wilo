@@ -19,6 +19,7 @@ MonoBehaviour:
   Kind: 1
   SinkSpeed: 0.55
   Ride: 0
+  RetrieveScale: 0.7
   RideDepthFeet: 0
   HopFeet: 0
   DrawDistance: 6.5

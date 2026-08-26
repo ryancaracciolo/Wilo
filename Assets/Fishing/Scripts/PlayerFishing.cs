@@ -40,6 +40,12 @@ public class PlayerFishing : MonoBehaviour
     /// </summary>
     const float RideTrackSpeed = 6f;
 
+    /// <summary>Metres of bottom the lure feels out ahead of itself.</summary>
+    const float BottomLookahead = 1.1f;
+
+    /// <summary>How fast the lure rides up onto something it is about to reach.</summary>
+    const float BottomClimbSpeed = 6f;
+
     [Header("Lure")]
     [SerializeField] float lureClearance = 0.1f;
     [SerializeField] Color lineColor = new Color(0.93f, 0.9f, 0.82f, 0.9f);
@@ -90,6 +96,8 @@ public class PlayerFishing : MonoBehaviour
     Vector3 pendingLanding;
     bool pendingValid;
     float reelRippleTraveled;
+    float holdDepthY;
+    float bottomFloorY;
     Vector2 keyboardAimOffset;
     bool aimHeldByKeyboard;
     bool retrieveAllTheWay;
@@ -288,13 +296,12 @@ public class PlayerFishing : MonoBehaviour
         }
 
         keyboardAimOffset += ArrowAim() * keyboardAimPixelsPerSecond * Time.deltaTime;
-        Vector2 mouseDrag = CurrentMousePosition() - aimMouseOrigin;
-        float yaw = Mathf.Clamp(
-            (-mouseDrag.x + keyboardAimOffset.x) * yawDegreesPerPixel,
-            -maxYawOffset,
-            maxYawOffset);
+        // The reticle tracks the pointer: move right and it swings right, push
+        // away and the cast lengthens. Arrows read the same way.
+        Vector2 aim = CurrentMousePosition() - aimMouseOrigin + keyboardAimOffset;
+        float yaw = Mathf.Clamp(aim.x * yawDegreesPerPixel, -maxYawOffset, maxYawOffset);
         float distance = Mathf.Clamp(
-            startCastDistance - mouseDrag.y * distancePerPixel + keyboardAimOffset.y * distancePerPixel,
+            startCastDistance + aim.y * distancePerPixel,
             minCastDistance,
             maxCastDistance);
 
@@ -404,6 +411,14 @@ public class PlayerFishing : MonoBehaviour
 
     void BeginRetrieve()
     {
+        // A hold-depth bait comes back at the depth it counted down to, so the
+        // bottom can lift it over a rock and it still settles back afterwards.
+        if (lureObject != null)
+        {
+            holdDepthY = lureObject.transform.position.y;
+            bottomFloorY = BedY(lureObject.transform.position);
+        }
+
         phase = Phase.Retrieving;
     }
 
@@ -423,21 +438,22 @@ public class PlayerFishing : MonoBehaviour
 
         Vector3 planar = new Vector3(previous.x, 0f, previous.z);
         Vector3 planarTarget = new Vector3(rod.x, 0f, rod.z);
-        planar = Vector3.MoveTowards(planar, planarTarget, retrieveSpeed * Time.deltaTime);
+        Vector3 travel = planarTarget - planar;
+        planar = Vector3.MoveTowards(planar, planarTarget, CurrentRetrieveSpeed() * Time.deltaTime);
 
         float remaining = Vector3.Distance(planar, planarTarget);
         float liftT = 1f - Mathf.Clamp01(remaining / retrieveLiftDistance);
         liftT = liftT * liftT * liftT;
 
-        float bedY = BedY(planar);
+        float floorY = BottomFloor(planar, travel);
         float y = RideY(previous.y, planar);
         if (liftT >= 0.05f)
             y = Mathf.Lerp(y, rod.y, liftT);
 
         if (liftT < 0.05f)
-            y = Mathf.Clamp(y, bedY, waterHeight - 0.02f);
+            y = Mathf.Clamp(y, floorY, waterHeight - 0.02f);
         else
-            y = Mathf.Max(y, bedY);
+            y = Mathf.Max(y, floorY);
 
         Vector3 next = new Vector3(planar.x, y, planar.z);
         lureObject.transform.position = next;
@@ -884,8 +900,31 @@ public class PlayerFishing : MonoBehaviour
             case LureRide.FixedBand:
                 return Mathf.MoveTowards(currentY, waterHeight - RideOffsetMeters(lure.RideDepthFeet), step);
             default:
-                return currentY;
+                return Mathf.MoveTowards(currentY, holdDepthY, step);
         }
+    }
+
+    /// <summary>
+    /// The shallowest the lure may run right now. Rock and timber ahead start
+    /// lifting it before it arrives, so an obstruction reads as the lure riding
+    /// up and over instead of clipping through and popping out the far side.
+    /// </summary>
+    float BottomFloor(Vector3 planar, Vector3 travel)
+    {
+        float here = BedY(planar);
+        if (travel.sqrMagnitude > 0.0001f)
+        {
+            float ahead = BedY(planar + travel.normalized * BottomLookahead);
+            bottomFloorY = Mathf.MoveTowards(bottomFloorY, ahead, BottomClimbSpeed * Time.deltaTime);
+        }
+
+        return Mathf.Max(here, bottomFloorY);
+    }
+
+    float CurrentRetrieveSpeed()
+    {
+        LureDefinition lure = Equipped();
+        return retrieveSpeed * (lure != null ? lure.RetrieveScale : 1f);
     }
 
     /// <summary>Where the lure settles when nobody is reeling. Bottom rides keep their clearance.</summary>
@@ -923,15 +962,20 @@ public class PlayerFishing : MonoBehaviour
 
     float BedY(Vector3 world)
     {
-        float depth = lake != null ? lake.GeometricDepthMeters(world) : 2f;
+        float depth = lake != null ? lake.LureBottomMeters(world) : 2f;
+        float bedY = waterHeight - depth;
         if (depth < 0.05f)
         {
+            // Nothing wet above the bottom here, which also covers rock standing
+            // clear of the water: fall back to the bare terrain under it.
             Terrain terrain = Terrain.activeTerrain;
             if (terrain != null)
-                return terrain.SampleHeight(world) + terrain.transform.position.y + lureClearance;
+                bedY = terrain.SampleHeight(world) + terrain.transform.position.y;
         }
 
-        return waterHeight - depth + lureClearance;
+        // Clearance must never lift the lure out of the water where the bottom
+        // comes right up to the surface.
+        return Mathf.Min(bedY + lureClearance, waterHeight - 0.05f);
     }
 
     void EnsureMarkers()

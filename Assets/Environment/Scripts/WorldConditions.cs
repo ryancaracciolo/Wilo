@@ -42,10 +42,41 @@ public class WorldConditions : MonoBehaviour
     static readonly RaycastHit[] DepthHits = new RaycastHit[24];
     static readonly List<Renderer> StructureScratch = new List<Renderer>();
 
+    /// <summary>
+    /// A piece of rock or timber standing off the bed. None of this scenery has
+    /// colliders, so each one is baked once as the dome inscribed in its bounds.
+    /// The boulders here are scaled up hard enough that a box would read as a
+    /// wide flat shelf; a dome keeps them shaped like the thing being sampled.
+    /// </summary>
+    struct StructureDome
+    {
+        public float CenterX;
+        public float CenterZ;
+        public float HalfX;
+        public float HalfZ;
+        public float TopY;
+        public float HalfY;
+
+        public bool TryHeight(float x, float z, out float y)
+        {
+            float dx = (x - CenterX) / HalfX;
+            float dz = (z - CenterZ) / HalfZ;
+            float radius = dx * dx + dz * dz;
+            if (radius >= 1f)
+            {
+                y = 0f;
+                return false;
+            }
+
+            y = TopY - HalfY * (1f - Mathf.Sqrt(1f - radius));
+            return true;
+        }
+    }
+
     PlayerBoatInteractor boat;
     Transform player;
     Transform waterSurface;
-    readonly List<Renderer> structure = new List<Renderer>();
+    readonly List<StructureDome> structure = new List<StructureDome>();
     float waterHeight;
     bool hasWaterHeight;
     float waterVisibility = 10.4f;
@@ -378,17 +409,9 @@ public class WorldConditions : MonoBehaviour
 
             for (int i = 0; i < structure.Count; i++)
             {
-                Renderer renderer = structure[i];
-                if (renderer == null)
-                    continue;
-
-                Bounds bounds = renderer.bounds;
-                if (world.x < bounds.min.x || world.x > bounds.max.x)
-                    continue;
-                if (world.z < bounds.min.z || world.z > bounds.max.z)
-                    continue;
-                if (bounds.max.y > bedY)
-                    bedY = bounds.max.y;
+                float top;
+                if (structure[i].TryHeight(world.x, world.z, out top) && top > bedY)
+                    bedY = top;
             }
         }
 
@@ -450,7 +473,17 @@ public class WorldConditions : MonoBehaviour
                 Renderer renderer = StructureScratch[r];
                 if (renderer == null || !renderer.enabled)
                     continue;
-                structure.Add(renderer);
+
+                Bounds bounds = renderer.bounds;
+                structure.Add(new StructureDome
+                {
+                    CenterX = bounds.center.x,
+                    CenterZ = bounds.center.z,
+                    HalfX = Mathf.Max(0.05f, bounds.extents.x),
+                    HalfZ = Mathf.Max(0.05f, bounds.extents.z),
+                    TopY = bounds.max.y,
+                    HalfY = bounds.extents.y
+                });
             }
         }
     }

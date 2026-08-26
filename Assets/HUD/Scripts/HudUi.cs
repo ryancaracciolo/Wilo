@@ -55,6 +55,17 @@ public static class HudUi
         return label;
     }
 
+    /// <summary>Small status tag that rides at the end of a row, such as "Entered".</summary>
+    public static Label Pill(string text, bool accent = false)
+    {
+        var label = new Label(text);
+        label.AddToClassList("hud-pill");
+        if (accent)
+            label.AddToClassList("hud-pill--on");
+        label.pickingMode = PickingMode.Ignore;
+        return label;
+    }
+
     /// <summary>
     /// The only place the player types. While it holds focus it raises
     /// HudInput.Typing so gameplay keys stand down, and Enter confirms.
