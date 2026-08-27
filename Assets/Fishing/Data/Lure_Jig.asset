@@ -16,10 +16,13 @@ MonoBehaviour:
   DisplayName: Jig
   Hint: Heavy. Drops fast and crawls the bottom.
   Color: {r: 0.72, g: 0.55, b: 0.18, a: 1}
+  Icon: {fileID: 21300000, guid: be2e799156d4041c98baefb9809f7c23, type: 3}
   Kind: 2
   SinkSpeed: 1.85
   Ride: 1
+  RetrieveScale: 1
   RideDepthFeet: 0.2
   HopFeet: 2.5
-  DrawDistance: 3
+  DrawDistance: 6
   WorksAtRest: 0.8
+  LowLightBias: 0

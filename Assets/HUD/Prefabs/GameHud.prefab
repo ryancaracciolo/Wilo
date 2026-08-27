@@ -76,7 +76,7 @@ MonoBehaviour:
   waterTempF: 64
   windFromDegrees: 45
   windMph: 4
-  realMinutesPerDay: 20
+  realMinutesPerDay: 40
   startHour: 7.5
   startYear: 1
   startDayOfYear: 30
@@ -139,4 +139,6 @@ MonoBehaviour:
   definitions:
   - {fileID: 11400000, guid: 84bcd10ff92e24dd183ce5e36acc54c9, type: 2}
   - {fileID: 11400000, guid: 86f17d716a9144973a266ff68a9d7aff, type: 2}
-  scheduleLength: 4
+  - {fileID: 11400000, guid: 7b4e2c91a6d843f0b1c5e8d9a0f3b246, type: 2}
+  - {fileID: 11400000, guid: 5a18d0c3e7f94b2a9c6e4d1f8b0a3759, type: 2}
+  scheduleLength: 8

@@ -141,8 +141,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerFishing
   minCastDistance: 4
-  maxCastDistance: 36
-  startCastDistance: 18
+  maxCastDistance: 54
+  startCastDistance: 27
   yawDegreesPerPixel: 0.22
   distancePerPixel: 0.12
   keyboardAimPixelsPerSecond: 520

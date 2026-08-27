@@ -10,15 +10,7 @@ public class LurePresence : MonoBehaviour
 {
     const float DefaultDraw = 8f;
     const float StillThreshold = 0.35f;
-
-    /// <summary>Speed at which a bait is doing everything it knows how to do.</summary>
     const float FullyWorkingSpeed = 3f;
-
-    /// <summary>
-    /// How long a bait takes to settle into its at-rest behaviour. Short on
-    /// purpose: a blade is dead the moment it stops, and fish decide in a few
-    /// seconds, so a slow fade would never get a chance to matter.
-    /// </summary>
     const float SettleSeconds = 1.5f;
 
     FishAgent claimed;
@@ -36,9 +28,8 @@ public class LurePresence : MonoBehaviour
     public event Action<FishAgent> Struck;
 
     /// <summary>
-    /// How far off a fish can pick this lure out. Flash and vibration only
-    /// exist while the lure is moving, which is what stops a loud bait from
-    /// being strictly better than a quiet one.
+    /// Metres where interest pull falls to zero. Working lure uses DrawDistance;
+    /// at rest it shrinks by WorksAtRest. Inside this reach, pull is 1 at 0 m.
     /// </summary>
     public float NoticeRadius
     {

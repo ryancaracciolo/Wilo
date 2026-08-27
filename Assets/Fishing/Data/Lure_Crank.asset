@@ -16,10 +16,13 @@ MonoBehaviour:
   DisplayName: Crankbait
   Hint: Digs to its own depth and holds there. Good for hunting a break.
   Color: {r: 0.36, g: 0.62, b: 0.52, a: 1}
+  Icon: {fileID: 21300000, guid: 03089dd22aeb5493a9d341bbfbb85732, type: 3}
   Kind: 3
   SinkSpeed: 0.4
   Ride: 2
+  RetrieveScale: 1
   RideDepthFeet: 14
   HopFeet: 0
-  DrawDistance: 6
+  DrawDistance: 7.5
   WorksAtRest: 0.2
+  LowLightBias: 0

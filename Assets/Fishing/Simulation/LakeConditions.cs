@@ -12,6 +12,8 @@ public readonly struct LakeConditions
     public readonly float WindFromDegrees;
     public readonly float WindMph;
     public readonly WeatherKind Weather;
+    public readonly float DawnHour;
+    public readonly float DuskHour;
 
     public LakeConditions(
         float hour,
@@ -21,7 +23,9 @@ public readonly struct LakeConditions
         float airTempF,
         float windFromDegrees,
         float windMph,
-        WeatherKind weather)
+        WeatherKind weather,
+        float dawnHour = 6.2f,
+        float duskHour = 20.3f)
     {
         Hour = hour;
         Season = season;
@@ -31,5 +35,7 @@ public readonly struct LakeConditions
         WindFromDegrees = windFromDegrees;
         WindMph = windMph;
         Weather = weather;
+        DawnHour = dawnHour;
+        DuskHour = duskHour;
     }
 }

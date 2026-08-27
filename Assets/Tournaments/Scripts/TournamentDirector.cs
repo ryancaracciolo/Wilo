@@ -10,29 +10,34 @@ public enum TournamentPhase
     /// <summary>Inside the fishing window; catches count toward the bag.</summary>
     Running,
 
-    /// <summary>Window closed, bag not yet weighed. The dock is the scales.</summary>
+    /// <summary>Window closed, bag not yet weighed. The camp is the scales.</summary>
     AwaitingWeighIn
 }
 
 /// <summary>
 /// Runtime hub for tournaments: registration and entry fees, the live bag during
-/// a window, weigh-in at the dock, placing against the generated field, and the
+/// a window, weigh-in at the camp, placing against the generated field, and the
 /// payout. Scheduling and field generation live in the plain-C# helpers; this
 /// class only owns the scene-bound state.
 ///
-/// Windows are assumed to sit inside one daylight day, so hours compare directly
-/// without wrapping past midnight.
+/// Blast-off and weigh-in happen at <see cref="TournamentSite"/>, not the cabin.
+/// Windows sit inside one daylight day, so hours compare directly without
+/// wrapping past midnight.
 /// </summary>
 public class TournamentDirector : MonoBehaviour
 {
     [SerializeField] WorldConditions conditions;
     [SerializeField] DayCycle dayCycle;
     [SerializeField] PlayerProgress progress;
+    [SerializeField] TournamentSite site;
 
-    [Tooltip("Every event on the calendar. One per weekday slot for now.")]
+    [Tooltip("Every event on the calendar. Several may share a weekday.")]
     [SerializeField] List<TournamentDefinition> definitions = new List<TournamentDefinition>();
 
-    [SerializeField, Min(1)] int scheduleLength = 4;
+    [SerializeField, Min(1)] int scheduleLength = 8;
+
+    [Tooltip("How early a registered morning starts, so there is time to boat from the cabin to the camp.")]
+    [SerializeField, Min(0.25f)] float checkInLeadHours = 1.5f;
 
     readonly List<TournamentOccurrence> registrations = new List<TournamentOccurrence>();
     readonly List<TournamentOccurrence> upcoming = new List<TournamentOccurrence>();
@@ -43,6 +48,8 @@ public class TournamentDirector : MonoBehaviour
     TournamentOccurrence active;
     bool subscribed;
     bool hookedDayCycle;
+    bool warned;
+    int campNoticeDay = -1;
 
     /// <summary>Short banner lines, matching the day cycle's notices.</summary>
     public event Action<string> Notice;
@@ -59,8 +66,16 @@ public class TournamentDirector : MonoBehaviour
     public int BagFish => bag.Fish;
     public float BagPounds => bag.Pounds;
     public int BagLimit => bag.Limit;
+    public IReadOnlyList<CatchRecord> Bag => bag.Kept;
     public IReadOnlyList<TournamentResult> History => history;
     public IReadOnlyList<TournamentDefinition> Definitions => definitions;
+
+    /// <summary>Live entries, nearest day first is the caller's job.</summary>
+    public void CopyRegistrations(List<TournamentOccurrence> into)
+    {
+        into.Clear();
+        into.AddRange(registrations);
+    }
 
     /// <summary>Next few dated events, nearest first.</summary>
     public IReadOnlyList<TournamentOccurrence> Upcoming
@@ -90,7 +105,10 @@ public class TournamentDirector : MonoBehaviour
             }
 
             if (Phase == TournamentPhase.AwaitingWeighIn)
-                return $"{def.DisplayName}  ·  {BagPounds:0.00} lb  ·  weigh in at the dock";
+            {
+                string close = GameCalendar.FormatHour(def.EndHour + def.ForfeitAfterHours);
+                return $"{def.DisplayName}  ·  {BagPounds:0.00} lb  ·  camp weigh-in by {close}";
+            }
 
             return "";
         }
@@ -203,19 +221,54 @@ public class TournamentDirector : MonoBehaviour
         if (subscribed && progress != null)
             progress.Caught -= OnCaught;
         if (dayCycle != null)
+        {
             dayCycle.BeforeTurnIn -= OnBeforeTurnIn;
+            dayCycle.Morning -= OnMorning;
+        }
         subscribed = false;
         hookedDayCycle = false;
     }
 
     /// <summary>
-    /// Heading home settles the day's bag while the clock still reads today, so a
-    /// short winter curfew cannot strand a bag that never reached the scales.
+    /// Going home without the camp scales is a no-show. The bag is already dead
+    /// if lines-out plus the forfeit window passed on the water.
     /// </summary>
     void OnBeforeTurnIn()
     {
         if (Phase != TournamentPhase.Idle)
-            Finish(false);
+            Finish(true);
+    }
+
+    void OnMorning(DayReport _)
+    {
+        TryCampNotice();
+    }
+
+    /// <summary>
+    /// Once per tournament morning, including a save loaded already on that day.
+    /// </summary>
+    void TryCampNotice()
+    {
+        if (conditions == null || Phase != TournamentPhase.Idle)
+            return;
+
+        int today = conditions.DayIndex;
+        if (campNoticeDay == today)
+            return;
+
+        for (int i = 0; i < registrations.Count; i++)
+        {
+            TournamentOccurrence occ = registrations[i];
+            TournamentDefinition def = occ.Definition;
+            if (def == null || occ.DayIndex != today)
+                continue;
+            if (conditions.Hour >= def.StartHour)
+                return;
+
+            campNoticeDay = today;
+            Notice?.Invoke($"{def.DisplayName} is this morning. Be at the camp by {GameCalendar.FormatHour(def.StartHour)} or you're left out.");
+            return;
+        }
     }
 
     void Update()
@@ -236,6 +289,7 @@ public class TournamentDirector : MonoBehaviour
 
         PruneRegistrations(today);
         TryStart(today, hour);
+        TryCampNotice();
     }
 
     void TickLive(int today, float hour)
@@ -257,11 +311,15 @@ public class TournamentDirector : MonoBehaviour
         if (Phase == TournamentPhase.Running)
         {
             if (hour < def.EndHour)
+            {
+                TryWarn(def, hour);
                 return;
+            }
 
             Phase = TournamentPhase.AwaitingWeighIn;
             BagChanged?.Invoke();
-            Notice?.Invoke($"Lines out. Bring your bag to the dock by {GameCalendar.FormatHour(def.EndHour + def.ForfeitAfterHours)}.");
+            int interval = Mathf.Max(1, Mathf.RoundToInt(def.LatePenaltyIntervalMinutes));
+            Notice?.Invoke($"Lines out. Weigh in at the camp by {GameCalendar.FormatHour(def.EndHour + def.ForfeitAfterHours)} or you're out. −{def.LatePenaltyPounds:0.#} lb every {interval} min.");
             return;
         }
 
@@ -272,29 +330,101 @@ public class TournamentDirector : MonoBehaviour
         }
 
         bool turningIn = dayCycle != null && dayCycle.IsTurningIn;
-        if (!turningIn && dayCycle != null && dayCycle.NearDock)
+        if (!turningIn && AtSite)
             Finish(false);
+    }
+
+    void TryWarn(TournamentDefinition def, float hour)
+    {
+        if (warned || def == null || def.WarningLeadHours <= 0.01f)
+            return;
+        if (hour < def.WarningHour)
+            return;
+
+        warned = true;
+        int minutes = Mathf.Max(1, Mathf.RoundToInt(def.WarningLeadHours * 60f));
+        Notice?.Invoke($"{minutes} minutes to lines out. Be at the camp by {GameCalendar.FormatHour(def.EndHour)}.");
     }
 
     void TryStart(int today, float hour)
     {
-        for (int i = 0; i < registrations.Count; i++)
+        for (int i = registrations.Count - 1; i >= 0; i--)
         {
             TournamentOccurrence occ = registrations[i];
             TournamentDefinition def = occ.Definition;
             if (def == null || occ.DayIndex != today)
                 continue;
-            if (hour < def.StartHour || hour >= def.EndHour)
+            if (hour < def.StartHour)
                 continue;
 
             registrations.RemoveAt(i);
+            if (hour >= def.EndHour || !AtSite)
+            {
+                Notice?.Invoke($"You missed blast-off for {def.DisplayName}. Be at the camp by {GameCalendar.FormatHour(def.StartHour)} next time.");
+                continue;
+            }
+
             active = occ;
             Phase = TournamentPhase.Running;
+            warned = false;
             bag.Reset(def.BagLimit);
             BagChanged?.Invoke();
             Notice?.Invoke($"{def.DisplayName} is underway. {def.FormatLabel} until {GameCalendar.FormatHour(def.EndHour)}.");
             return;
         }
+    }
+
+    /// <summary>True when the player is in the camp pocket for blast-off or scales.</summary>
+    public bool AtSite
+    {
+        get
+        {
+            if (site == null)
+                site = FindFirstObjectByType<TournamentSite>();
+            if (site == null || progress == null)
+                return false;
+            return site.Contains(ProbePosition());
+        }
+    }
+
+    /// <summary>The hull if they are still in the boat, otherwise where they stand.</summary>
+    Vector3 ProbePosition()
+    {
+        var boats = progress.GetComponent<PlayerBoatInteractor>();
+        if (boats != null && boats.OccupiedBoat != null)
+            return boats.OccupiedBoat.transform.position;
+        return progress.transform.position;
+    }
+
+    /// <summary>
+    /// Early cabin wake on a registered morning, so winter dawn cannot land
+    /// after blast-off. False when that day has no entry.
+    /// </summary>
+    public bool TryGetWakeHour(int dayIndex, out float hour)
+    {
+        hour = 0f;
+        float best = float.MaxValue;
+        bool found = false;
+        for (int i = 0; i < registrations.Count; i++)
+        {
+            TournamentOccurrence occ = registrations[i];
+            TournamentDefinition def = occ.Definition;
+            if (def == null || occ.DayIndex != dayIndex)
+                continue;
+
+            float wake = def.StartHour - checkInLeadHours;
+            if (wake < best)
+            {
+                best = wake;
+                found = true;
+            }
+        }
+
+        if (!found)
+            return false;
+
+        hour = Mathf.Max(0f, best);
+        return true;
     }
 
     public bool IsRegistered(TournamentOccurrence occurrence)
@@ -308,14 +438,39 @@ public class TournamentDirector : MonoBehaviour
         return false;
     }
 
-    /// <summary>True when the player could still enter: not entered, not started, fee covered.</summary>
+    /// <summary>True when the player could still enter: unlocked, not entered, not started, fee covered, and not already booked that morning.</summary>
     public bool CanRegister(TournamentOccurrence occurrence)
     {
         if (!occurrence.IsValid || IsRegistered(occurrence) || Phase != TournamentPhase.Idle)
             return false;
         if (HasPassed(occurrence))
             return false;
+        if (!MeetsReputation(occurrence.Definition))
+            return false;
+        if (HasRegistrationOn(occurrence.DayIndex))
+            return false;
         return AffordableFee(occurrence.Definition);
+    }
+
+    public bool MeetsReputation(TournamentDefinition definition)
+    {
+        if (definition == null)
+            return false;
+        if (definition.ReputationRequired <= 0)
+            return true;
+        return progress != null && progress.Reputation >= definition.ReputationRequired;
+    }
+
+    /// <summary>True when another event is already entered on this calendar day.</summary>
+    public bool HasRegistrationOn(int dayIndex)
+    {
+        for (int i = 0; i < registrations.Count; i++)
+        {
+            if (registrations[i].DayIndex == dayIndex)
+                return true;
+        }
+
+        return false;
     }
 
     public bool Register(TournamentOccurrence occurrence)
@@ -364,6 +519,8 @@ public class TournamentDirector : MonoBehaviour
         if (!occurrence.IsValid || Phase != TournamentPhase.Idle)
             return false;
         if (conditions == null || dayCycle == null || dayCycle.IsTurningIn)
+            return false;
+        if (!MeetsReputation(occurrence.Definition))
             return false;
         return occurrence.DayIndex > conditions.DayIndex;
     }
@@ -417,7 +574,7 @@ public class TournamentDirector : MonoBehaviour
             return false;
         if (occurrence.DayIndex > conditions.DayIndex)
             return false;
-        return occurrence.DayIndex < conditions.DayIndex || conditions.Hour >= occurrence.Definition.EndHour;
+        return occurrence.DayIndex < conditions.DayIndex || conditions.Hour >= occurrence.Definition.StartHour;
     }
 
     public bool AffordableFee(TournamentDefinition definition)
@@ -442,35 +599,62 @@ public class TournamentDirector : MonoBehaviour
 
         float raw = bag.Pounds;
         float penalty = 0f;
-        if (!forfeited)
-        {
-            float late = Mathf.Max(0f, conditions.Hour - def.EndHour);
-            penalty = Mathf.Floor(late / 0.5f) * def.LatePenaltyPerHalfHour;
-        }
+        if (!forfeited && conditions != null)
+            penalty = def.LatePenaltyFor(conditions.Hour - def.EndHour);
 
         float scored = forfeited ? 0f : Mathf.Max(0f, raw - penalty);
+        float playerLm = forfeited ? 0f : bag.BestLargemouth;
+        float playerSm = forfeited ? 0f : bag.BestSmallmouth;
         standings.Add(new TournamentStanding
         {
             Name = progress != null ? progress.DisplayName : "You",
             Pounds = Mathf.Round(scored * 100f) * 0.01f,
             Fish = forfeited ? 0 : bag.Fish,
-            IsPlayer = true
+            IsPlayer = true,
+            LunkerLargemouth = playerLm,
+            LunkerSmallmouth = playerSm
         });
         standings.Sort(TournamentField.CompareHeaviest);
+        TournamentField.AwardLunkers(standings);
 
         int place = standings.Count;
+        bool wonLm = false;
+        bool wonSm = false;
         for (int i = 0; i < standings.Count; i++)
         {
-            if (standings[i].IsPlayer)
+            if (!standings[i].IsPlayer)
+                continue;
+            place = i + 1;
+            wonLm = standings[i].WonLunkerLargemouth;
+            wonSm = standings[i].WonLunkerSmallmouth;
+            break;
+        }
+
+        // A blank bag never pays a place, however the rest of the field did.
+        int placePayout = forfeited || scored <= 0.01f ? 0 : def.PayoutFor(place);
+        int lunkerPay = 0;
+        int lunkerRep = 0;
+        if (!forfeited)
+        {
+            if (wonLm)
             {
-                place = i + 1;
-                break;
+                lunkerPay += def.LunkerPayout(true);
+                lunkerRep += def.LunkerReputation(true);
+            }
+
+            if (wonSm)
+            {
+                lunkerPay += def.LunkerPayout(false);
+                lunkerRep += def.LunkerReputation(false);
             }
         }
 
-        // A blank bag never pays, however the rest of the field did.
-        int payout = forfeited || scored <= 0.01f ? 0 : def.PayoutFor(place);
+        int payout = placePayout + lunkerPay;
         AdjustMoney(payout);
+
+        int reputation = def.ReputationFor(place, forfeited) + lunkerRep;
+        if (progress != null)
+            progress.AddReputation(reputation);
 
         TournamentStanding winner = standings.Count > 0 ? standings[0] : default;
         var result = new TournamentResult
@@ -488,17 +672,28 @@ public class TournamentDirector : MonoBehaviour
             Pounds = scored,
             EntryFee = def.EntryFee,
             Payout = payout,
+            PlacePayout = placePayout,
+            Reputation = reputation,
             Forfeited = forfeited,
             WinnerName = winner.Name,
-            WinnerPounds = winner.Pounds
+            WinnerPounds = winner.Pounds,
+            LunkerLargemouth = playerLm,
+            LunkerSmallmouth = playerSm,
+            WonLunkerLargemouth = wonLm,
+            WonLunkerSmallmouth = wonSm,
+            LunkerPayout = lunkerPay,
+            LunkerReputation = lunkerRep,
+            Standings = new List<TournamentStanding>(standings)
         };
 
         history.Insert(0, result);
         Phase = TournamentPhase.Idle;
         active = default;
+        warned = false;
         bag.Reset(def.BagLimit);
         BagChanged?.Invoke();
         Finished?.Invoke(result);
+        SaveService.Instance?.Save();
     }
 
     /// <summary>
@@ -557,6 +752,8 @@ public class TournamentDirector : MonoBehaviour
             conditions = FindFirstObjectByType<WorldConditions>();
         if (dayCycle == null)
             dayCycle = FindFirstObjectByType<DayCycle>();
+        if (site == null)
+            site = FindFirstObjectByType<TournamentSite>();
         if (progress != null)
             return;
 
@@ -576,6 +773,7 @@ public class TournamentDirector : MonoBehaviour
         if (!hookedDayCycle && dayCycle != null)
         {
             dayCycle.BeforeTurnIn += OnBeforeTurnIn;
+            dayCycle.Morning += OnMorning;
             hookedDayCycle = true;
         }
     }

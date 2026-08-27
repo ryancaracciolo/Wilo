@@ -16,10 +16,13 @@ MonoBehaviour:
   DisplayName: Worm
   Hint: Soft and quiet. Sinks slowly and stays where you leave it.
   Color: {r: 0.45, g: 0.28, b: 0.42, a: 1}
+  Icon: {fileID: 21300000, guid: aed38e674e39d4aa6b94cbbaf5cba9d2, type: 3}
   Kind: 0
-  SinkSpeed: 0.16
+  SinkSpeed: 0.3
   Ride: 0
+  RetrieveScale: 1
   RideDepthFeet: 0
   HopFeet: 0
-  DrawDistance: 2.5
+  DrawDistance: 6
   WorksAtRest: 0.9
+  LowLightBias: 0

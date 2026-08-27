@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -29,6 +30,15 @@ public class TournamentBag
 
     /// <summary>Heaviest fish in the bag, for a biggest-bass readout.</summary>
     public float BestPounds => kept.Count > 0 ? kept[0].Pounds : 0f;
+
+    public float BestLargemouth => BestMatching(IsLargemouth);
+    public float BestSmallmouth => BestMatching(IsSmallmouth);
+
+    public static bool IsLargemouth(CatchRecord record) =>
+        MatchesSpecies(record, "Largemouth");
+
+    public static bool IsSmallmouth(CatchRecord record) =>
+        MatchesSpecies(record, "Smallmouth");
 
     public void Reset(int bagLimit)
     {
@@ -73,5 +83,26 @@ public class TournamentBag
         }
 
         kept.Insert(at, record);
+    }
+
+    float BestMatching(Func<CatchRecord, bool> match)
+    {
+        float best = 0f;
+        for (int i = 0; i < kept.Count; i++)
+        {
+            CatchRecord record = kept[i];
+            if (record == null || !match(record) || record.Pounds <= best)
+                continue;
+            best = record.Pounds;
+        }
+
+        return best;
+    }
+
+    static bool MatchesSpecies(CatchRecord record, string token)
+    {
+        if (record == null || string.IsNullOrEmpty(record.SpeciesName))
+            return false;
+        return record.SpeciesName.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0;
     }
 }

@@ -32,9 +32,16 @@ public class GameHud : MonoBehaviour
     FishFightPanel fightPanel;
     LureDepthPanel lureDepth;
     ConditionsStrip strip;
+    Label moneyLabel;
+    Label reputationLabel;
+    int shownMoney = int.MinValue;
+    int shownReputation = int.MinValue;
     Label noticeToast;
-    Label tourneyChip;
-    VisualElement dockPrompt;
+    Button tourneyChip;
+    Label tourneyChipLabel;
+    VisualElement tourneyChevron;
+    VisualElement bagPopover;
+    HudCueOverlay cueOverlay;
     VisualElement fadeLayer;
     VisualElement summaryLayer;
     VisualElement summaryCard;
@@ -52,6 +59,9 @@ public class GameHud : MonoBehaviour
     CatchRecord selectedMarked;
     readonly List<CatchRecord> selectedCluster = new List<CatchRecord>();
     readonly List<TournamentOccurrence> skipScratch = new List<TournamentOccurrence>();
+    readonly List<TournamentOccurrence> enteredScratch = new List<TournamentOccurrence>();
+    TourneyTab tourneyTab;
+    bool tourneyPastPlacedOnly;
     VisualElement mapJournalLayer;
     VisualElement mapJournalCard;
     VisualElement mapJournalDetail;
@@ -126,6 +136,7 @@ public class GameHud : MonoBehaviour
         }
 
         HudInput.Reset();
+        HudCues.Reset();
         shownCatch = null;
         built = false;
     }
@@ -154,6 +165,7 @@ public class GameHud : MonoBehaviour
         HudInput.Panel = root?.panel;
         HudInput.Tick();
         strip.Refresh(conditions);
+        RefreshWallet();
         mapSonar.SetSonarAvailable(conditions.OnBoat);
         mapSonar.Tick(conditions, Time.deltaTime);
         TickJournalMap();
@@ -192,6 +204,20 @@ public class GameHud : MonoBehaviour
             dayCycle.TurnIn(false);
     }
 
+    void LateUpdate()
+    {
+        if (!built)
+            return;
+
+        Transform follow = fishing != null
+            ? fishing.transform
+            : conditions != null ? conditions.PlayerTransform : null;
+        cueOverlay?.Tick(
+            Camera.main,
+            follow,
+            HudInput.PopupOpen || DaySummaryOpen || CatchSheetOpen);
+    }
+
     bool TurnInAvailable => dayCycle != null && dayCycle.CanTurnIn && !HudInput.PopupOpen;
 
     void TickDayCycle()
@@ -205,11 +231,10 @@ public class GameHud : MonoBehaviour
         if (conditions != null)
             conditions.HoldClock = HudInput.PopupOpen || turning;
 
-        if (dockPrompt != null)
-        {
-            bool show = TurnInAvailable && !turning;
-            dockPrompt.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
-        }
+        if (TurnInAvailable && !turning)
+            HudCues.ShowAction("turn-in", "Enter", "Turn in for the night", onActivate: TurnInFromPrompt);
+        else
+            HudCues.Clear("turn-in");
 
         TickFade();
     }
@@ -243,15 +268,20 @@ public class GameHud : MonoBehaviour
         }
     }
 
-    void ShowNotice(string message)
+    void ShowNotice(string message) => ShowNotice(message, 4.5f);
+
+    void ShowNotice(string message, float holdSeconds)
     {
         if (noticeToast == null || string.IsNullOrEmpty(message))
             return;
 
+        if (holdSeconds <= 4.51f && message.IndexOf("left out", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            holdSeconds = 8f;
+
         noticeToast.text = message;
         noticeToast.style.display = DisplayStyle.Flex;
         noticeToast.BringToFront();
-        noticeUntil = Time.unscaledTime + 4.5f;
+        noticeUntil = Time.unscaledTime + holdSeconds;
     }
 
     void ShowDaySummary(DaySummary summary)
@@ -333,10 +363,15 @@ public class GameHud : MonoBehaviour
 
     void ShowMorning(DayReport report)
     {
+        // Tournament mornings skip the greeting; the director toasts the camp reminder.
+        if (director != null && conditions != null
+            && director.Phase == TournamentPhase.Idle
+            && director.HasRegistrationOn(conditions.DayIndex))
+            return;
+
         string season = string.IsNullOrEmpty(report.SeasonLabel)
             ? ""
             : report.SeasonLabel.ToLowerInvariant();
-        // The recap already covered last night, so morning is just a greeting.
         ShowNotice(JoinFacts("Good morning.", report.DateLabel, season));
     }
 
@@ -374,6 +409,8 @@ public class GameHud : MonoBehaviour
         topLeft.AddToClassList("hud-top-left");
         topLeft.Add(HudUi.IconButton("Profile", HudUi.PaintProfile, OpenProfile));
         topLeft.Add(HudUi.IconButton("Tournaments", HudUi.PaintTrophy, OpenTournaments));
+        topLeft.Add(HudUi.StatChip("Money", null, out moneyLabel));
+        topLeft.Add(HudUi.StatChip("Reputation", HudUi.PaintStar, out reputationLabel));
         root.Add(topLeft);
 
         var topRight = new VisualElement();
@@ -403,14 +440,21 @@ public class GameHud : MonoBehaviour
         noticeToast.style.display = DisplayStyle.None;
         root.Add(noticeToast);
 
-        tourneyChip = new Label();
+        tourneyChip = new Button();
         tourneyChip.AddToClassList("hud-tourney-chip");
-        tourneyChip.pickingMode = PickingMode.Ignore;
+        tourneyChip.focusable = false;
         tourneyChip.style.display = DisplayStyle.None;
+        tourneyChip.clicked += ToggleBagPopover;
+        tourneyChipLabel = new Label();
+        tourneyChipLabel.AddToClassList("hud-tourney-chip-label");
+        tourneyChipLabel.pickingMode = PickingMode.Ignore;
+        tourneyChip.Add(tourneyChipLabel);
+        tourneyChevron = HudUi.Glyph("hud-tourney-chevron", HudUi.PaintChevronDown);
+        tourneyChip.Add(tourneyChevron);
         root.Add(tourneyChip);
 
-        dockPrompt = BuildDockPrompt();
-        root.Add(dockPrompt);
+        cueOverlay = new HudCueOverlay();
+        root.Add(cueOverlay);
 
         catchSheet = new VisualElement();
         catchSheet.AddToClassList("hud-catch-sheet");
@@ -445,13 +489,18 @@ public class GameHud : MonoBehaviour
         popoverCatcher = new VisualElement();
         popoverCatcher.AddToClassList("hud-popover-catcher");
         popoverCatcher.style.display = DisplayStyle.None;
-        popoverCatcher.RegisterCallback<ClickEvent>(_ => CloseLurePicker());
+        popoverCatcher.RegisterCallback<ClickEvent>(_ => ClosePopovers());
         root.Add(popoverCatcher);
 
         lurePopover = new VisualElement();
         lurePopover.AddToClassList("hud-lure-popover");
         lurePopover.style.display = DisplayStyle.None;
         root.Add(lurePopover);
+
+        bagPopover = new VisualElement();
+        bagPopover.AddToClassList("hud-bag-popover");
+        bagPopover.style.display = DisplayStyle.None;
+        root.Add(bagPopover);
 
         BuildMapJournal();
 
@@ -474,28 +523,16 @@ public class GameHud : MonoBehaviour
 
         RefreshLureChip();
         RefreshTournamentChip();
+        shownMoney = int.MinValue;
+        shownReputation = int.MinValue;
+        RefreshWallet();
         built = true;
     }
 
-    VisualElement BuildDockPrompt()
+    void TurnInFromPrompt()
     {
-        var prompt = new VisualElement();
-        prompt.AddToClassList("hud-dock-prompt");
-        prompt.style.display = DisplayStyle.None;
-        prompt.RegisterCallback<ClickEvent>(_ =>
-        {
-            if (TurnInAvailable)
-                dayCycle.TurnIn(false);
-        });
-
-        var title = HudUi.Body("Turn in for the night");
-        title.pickingMode = PickingMode.Ignore;
-        prompt.Add(title);
-
-        var hint = HudUi.Muted("Enter");
-        hint.pickingMode = PickingMode.Ignore;
-        prompt.Add(hint);
-        return prompt;
+        if (TurnInAvailable)
+            dayCycle.TurnIn(false);
     }
 
     void BindHudPointer(VisualElement hudRoot)
@@ -568,13 +605,28 @@ public class GameHud : MonoBehaviour
         return lureChip;
     }
 
+    void RefreshWallet()
+    {
+        int money = progress != null ? progress.Money : 0;
+        int reputation = progress != null ? progress.Reputation : 0;
+        if (money == shownMoney && reputation == shownReputation)
+            return;
+
+        shownMoney = money;
+        shownReputation = reputation;
+        if (moneyLabel != null)
+            moneyLabel.text = $"${money}";
+        if (reputationLabel != null)
+            reputationLabel.text = reputation.ToString();
+    }
+
     void RefreshLureChip()
     {
         if (lureName == null)
             return;
         LureDefinition lure = tackle != null ? tackle.Equipped : null;
         lureName.text = lure != null ? lure.DisplayName : "Lure";
-        lureSwatch.style.backgroundColor = lure != null ? lure.Color : HudTheme.Teal;
+        ApplyLureSwatch(lureSwatch, lure != null ? lure.Icon : null, lure != null ? lure.Color : HudTheme.Teal);
         lureChip.tooltip = lure != null ? lure.Hint : "";
     }
 
@@ -587,7 +639,7 @@ public class GameHud : MonoBehaviour
         if (catchSheet == null || record == null)
             return;
 
-        CloseLurePicker();
+        ClosePopovers();
         if (modalLayer != null)
             modalLayer.style.display = DisplayStyle.None;
 
@@ -603,8 +655,8 @@ public class GameHud : MonoBehaviour
         lureRow.AddToClassList("hud-catch-lure");
         var swatch = new VisualElement();
         swatch.AddToClassList("hud-lure-swatch");
-        swatch.style.backgroundColor = record.LureColor;
         swatch.pickingMode = PickingMode.Ignore;
+        ApplyLureSwatch(swatch, IconForCatch(record), record.LureColor);
         lureRow.Add(swatch);
         lureRow.Add(HudUi.Body($"Caught on {record.LureName}"));
         catchSheet.Add(lureRow);
@@ -698,50 +750,103 @@ public class GameHud : MonoBehaviour
     {
         if (CatchSheetOpen || MapJournalOpen)
             return;
-        CloseLurePicker();
+        ClosePopovers();
         VisualElement body = BeginCard("Profile", CloseAllOverlays);
 
-        string money = progress != null ? $"${progress.Money}" : "$0";
         string name = progress != null ? progress.DisplayName : "You";
-        body.Add(HudUi.Title(name));
-        body.Add(HudUi.Body(money));
+        int money = progress != null ? progress.Money : 0;
+        int reputation = progress != null ? progress.Reputation : 0;
+
+        var hero = new VisualElement();
+        hero.AddToClassList("hud-profile-hero");
+        hero.Add(HudUi.Glyph("hud-profile-avatar", HudUi.PaintProfile));
+
+        var identity = new VisualElement();
+        identity.AddToClassList("hud-profile-identity");
+        Label nameLabel = HudUi.Title(name);
+        nameLabel.AddToClassList("hud-profile-name");
+        identity.Add(nameLabel);
+        identity.Add(HudUi.Muted(progress != null && progress.HasName
+            ? "Wilo Lake"
+            : "Needed on the tournament board"));
+        hero.Add(identity);
+
         if (progress != null)
-            body.Add(HudUi.TextButton(progress.HasName ? "Change name" : "Set name", OpenRenameSheet));
+        {
+            Button rename = HudUi.TextButton(
+                progress.HasName ? "Rename" : "Set name",
+                OpenRenameSheet,
+                !progress.HasName);
+            if (progress.HasName)
+                rename.AddToClassList("hud-text-button--quiet");
+            hero.Add(rename);
+        }
+
+        body.Add(hero);
+
+        var stats = new VisualElement();
+        stats.AddToClassList("hud-profile-stats");
+        stats.Add(HudUi.StatTile($"${money}", "Money"));
+        stats.Add(HudUi.StatTile(reputation.ToString(), "Reputation", HudUi.PaintStar));
+        body.Add(stats);
 
         var pb = new VisualElement();
         pb.AddToClassList("hud-section");
+        pb.AddToClassList("hud-profile-best");
         pb.Add(HudUi.Muted("Personal best"));
         if (progress != null && progress.HasPersonalBest)
-            pb.Add(HudUi.Body($"{progress.BestSpecies}  ·  {progress.BestBassPounds:0.00} lb"));
+        {
+            var weightRow = HudUi.Row();
+            weightRow.Add(HudUi.Glyph("hud-profile-best-mark", HudUi.PaintTrophy));
+            Label weight = HudUi.Title($"{progress.BestBassPounds:0.00} lb");
+            weight.AddToClassList("hud-profile-best-weight");
+            weightRow.Add(weight);
+            pb.Add(weightRow);
+            pb.Add(HudUi.Body(progress.BestSpecies));
+        }
         else
-            pb.Add(HudUi.Body("No trophy yet. The lake is waiting."));
+        {
+            pb.Add(HudUi.Body("No trophy yet."));
+            pb.Add(HudUi.Muted("The lake is waiting."));
+        }
+
         body.Add(pb);
 
         var history = new VisualElement();
         history.AddToClassList("hud-section");
-        history.Add(HudUi.Muted("Past tournaments"));
-        if (director == null || director.History.Count == 0)
+
+        int wins = 0;
+        if (director != null)
         {
-            history.Add(HudUi.Body("No results yet. The Saturday Open is free to enter."));
-        }
-        else
-        {
-            int wins = 0;
             foreach (TournamentResult past in director.History)
             {
                 if (past.Won)
                     wins++;
             }
+        }
 
-            history.Add(HudUi.Body(wins == 1 ? "1 win" : $"{wins} wins"));
+        var historyHead = HudUi.Row();
+        historyHead.AddToClassList("hud-profile-section-head");
+        Label historyTitle = HudUi.Muted("Tournaments");
+        historyTitle.AddToClassList("hud-profile-section-title");
+        historyHead.Add(historyTitle);
+        if (wins > 0)
+            historyHead.Add(HudUi.Pill(wins == 1 ? "1 win" : $"{wins} wins", true));
+        history.Add(historyHead);
+
+        if (director == null || director.History.Count == 0)
+        {
+            history.Add(HudUi.Body("No results yet."));
+            history.Add(HudUi.Muted("The Saturday Club is free to enter."));
+        }
+        else
+        {
             int shown = 0;
             foreach (TournamentResult past in director.History)
             {
                 if (shown++ >= 5)
                     break;
-                history.Add(HudUi.Muted(
-                    $"{past.DisplayName}  ·  {past.PlaceLabel}  ·  {past.Pounds:0.00} lb" +
-                    (past.Payout > 0 ? $"  ·  ${past.Payout}" : "")));
+                history.Add(ProfileResultRow(past));
             }
         }
 
@@ -749,12 +854,34 @@ public class GameHud : MonoBehaviour
         ShowModal();
     }
 
+    static VisualElement ProfileResultRow(TournamentResult past)
+    {
+        var row = new VisualElement();
+        row.AddToClassList("hud-profile-result");
+
+        var head = HudUi.Row();
+        Label eventName = HudUi.Body(past.DisplayName);
+        eventName.AddToClassList("hud-profile-result-name");
+        head.Add(eventName);
+        head.Add(HudUi.Pill(past.Won ? "Win" : past.PlaceLabel, past.Won || past.Placed));
+        row.Add(head);
+
+        string meta = past.Forfeited ? "Missed the weigh-in" : $"{past.Pounds:0.00} lb";
+        if (past.Payout > 0)
+            meta += $"  ·  ${past.Payout}";
+        if (past.Reputation > 0)
+            meta += $"  ·  +{past.Reputation} Rep";
+        row.Add(HudUi.Muted(meta));
+        return row;
+    }
+
     void OpenTournaments()
     {
         if (CatchSheetOpen || MapJournalOpen)
             return;
-        CloseLurePicker();
+        ClosePopovers();
         VisualElement body = BeginCard("Tournaments", CloseAllOverlays);
+        modalCard.EnableInClassList("hud-card--tall", true);
 
         if (director == null)
         {
@@ -764,7 +891,7 @@ public class GameHud : MonoBehaviour
         }
 
         if (progress != null)
-            body.Add(HudUi.Muted($"${progress.Money} on hand"));
+            body.Add(HudUi.Muted($"${progress.Money}  ·  {progress.Reputation} Reputation"));
 
         if (director.Phase != TournamentPhase.Idle)
         {
@@ -775,17 +902,59 @@ public class GameHud : MonoBehaviour
             body.Add(live);
         }
 
+        var tabs = HudUi.TabRow();
+        tabs.AddToClassList("hud-card-tabs");
+        tabs.Add(HudUi.Tab("Board", () =>
+        {
+            tourneyTab = TourneyTab.Board;
+            OpenTournaments();
+        }, tourneyTab == TourneyTab.Board));
+        tabs.Add(HudUi.Tab("Entered", () =>
+        {
+            tourneyTab = TourneyTab.Entered;
+            OpenTournaments();
+        }, tourneyTab == TourneyTab.Entered));
+        tabs.Add(HudUi.Tab("Past", () =>
+        {
+            tourneyTab = TourneyTab.Past;
+            OpenTournaments();
+        }, tourneyTab == TourneyTab.Past));
+        modalCard.Insert(1, tabs);
+
+        if (tourneyTab == TourneyTab.Past)
+        {
+            var filter = HudUi.TabRow();
+            filter.AddToClassList("hud-past-filter");
+            filter.Add(HudUi.Tab("All", () =>
+            {
+                tourneyPastPlacedOnly = false;
+                OpenTournaments();
+            }, !tourneyPastPlacedOnly));
+            filter.Add(HudUi.Tab("Placed", () =>
+            {
+                tourneyPastPlacedOnly = true;
+                OpenTournaments();
+            }, tourneyPastPlacedOnly));
+            modalCard.Insert(2, filter);
+            FillPast(body);
+        }
+        else if (tourneyTab == TourneyTab.Entered)
+            FillEntered(body);
+        else
+            FillBoard(body);
+
+        ShowModal();
+    }
+
+    void FillBoard(VisualElement body)
+    {
         IReadOnlyList<TournamentOccurrence> schedule = director.Upcoming;
         if (schedule.Count == 0)
         {
             body.Add(HudUi.Body("Nothing on the calendar just now."));
-            ShowModal();
             return;
         }
 
-        // Events repeat weekly, so the board lists several runnings of the same
-        // few names. Weekend headings are what tell them apart, and a series or
-        // a circuit the player unlocks can head its own run of rows later.
         string group = "";
         for (int i = 0; i < schedule.Count; i++)
         {
@@ -800,8 +969,124 @@ public class GameHud : MonoBehaviour
 
             body.Add(MakeTournamentRow(schedule[i]));
         }
+    }
 
-        ShowModal();
+    void FillEntered(VisualElement body)
+    {
+        director.CopyRegistrations(enteredScratch);
+        enteredScratch.Sort((a, b) =>
+        {
+            int day = a.DayIndex.CompareTo(b.DayIndex);
+            if (day != 0)
+                return day;
+            string nameA = a.Definition != null ? a.Definition.DisplayName : "";
+            string nameB = b.Definition != null ? b.Definition.DisplayName : "";
+            return string.CompareOrdinal(nameA, nameB);
+        });
+
+        if (enteredScratch.Count == 0)
+        {
+            body.Add(HudUi.Body("Nothing entered. Sign up on the board."));
+            return;
+        }
+
+        string group = "";
+        for (int i = 0; i < enteredScratch.Count; i++)
+        {
+            string week = conditions != null
+                ? TournamentSchedule.WeekLabel(conditions.Calendar, enteredScratch[i])
+                : "";
+            if (week.Length > 0 && week != group)
+            {
+                group = week;
+                body.Add(GroupLabel(week));
+            }
+
+            body.Add(MakeTournamentRow(enteredScratch[i]));
+        }
+    }
+
+    void FillPast(VisualElement body)
+    {
+        IReadOnlyList<TournamentResult> history = director.History;
+        int shown = 0;
+        string group = "";
+        for (int i = 0; i < history.Count; i++)
+        {
+            TournamentResult past = history[i];
+            if (past == null)
+                continue;
+            if (tourneyPastPlacedOnly && !past.Placed)
+                continue;
+
+            string week = conditions != null
+                ? TournamentSchedule.PastWeekLabel(conditions.Calendar, past.DayIndex)
+                : "";
+            if (week.Length > 0 && week != group)
+            {
+                group = week;
+                body.Add(GroupLabel(week));
+            }
+
+            body.Add(MakePastRow(past));
+            shown++;
+        }
+
+        if (shown > 0)
+            return;
+
+        body.Add(HudUi.Body(tourneyPastPlacedOnly
+            ? "Nothing placed yet."
+            : "No tournaments yet. Sign up on the board."));
+    }
+
+    VisualElement MakePastRow(TournamentResult result)
+    {
+        var row = new VisualElement();
+        row.AddToClassList("hud-section");
+        row.AddToClassList("hud-tourney-row");
+        if (result.Placed)
+            row.AddToClassList("hud-tourney-row--placed");
+
+        var head = new VisualElement();
+        head.AddToClassList("hud-tourney-head");
+        Label name = HudUi.Body(result.DisplayName);
+        name.AddToClassList("hud-tourney-name");
+        head.Add(name);
+        string place = result.Forfeited
+            ? "Forfeited"
+            : result.Pounds <= 0.01f
+                ? "No weight"
+                : TournamentResult.Ordinal(result.Place);
+        head.Add(HudUi.Pill(place, result.Placed));
+        row.Add(head);
+
+        if (!string.IsNullOrEmpty(result.DateLabel))
+            row.Add(HudUi.Muted(result.DateLabel));
+        if (!result.Forfeited)
+            row.Add(HudUi.Muted($"{result.Pounds:0.00} lb  ·  {result.Fish} fish"));
+
+        if (result.WonLunkerLargemouth || result.WonLunkerSmallmouth)
+        {
+            var lunkers = HudUi.Row();
+            if (result.WonLunkerLargemouth)
+                lunkers.Add(HudUi.Pill("LM lunker", true));
+            if (result.WonLunkerSmallmouth)
+                lunkers.Add(HudUi.Pill("SM lunker", true));
+            row.Add(lunkers);
+        }
+
+        if (result.Payout > 0 || result.Reputation > 0)
+        {
+            string haul = result.Payout > 0 ? $"+${result.Payout}" : "";
+            if (result.Reputation > 0)
+                haul = haul.Length > 0
+                    ? $"{haul}  ·  +{result.Reputation} Rep"
+                    : $"+{result.Reputation} Rep";
+            row.Add(HudUi.Muted(haul));
+        }
+
+        return row;
     }
 
     static Label GroupLabel(string text)
@@ -830,6 +1115,7 @@ public class GameHud : MonoBehaviour
         head.Add(name);
         if (registered)
             head.Add(HudUi.Pill("Entered", true));
+        head.Add(HudUi.Pill(def.TierLabel));
         if (conditions != null)
             head.Add(HudUi.Pill(TournamentSchedule.CountdownLabel(calendar, occurrence)));
         row.Add(head);
@@ -838,10 +1124,16 @@ public class GameHud : MonoBehaviour
             ? TournamentSchedule.WhenLabel(calendar, occurrence)
             : $"{def.Weekday}  ·  {def.WindowLabel}"));
         row.Add(HudUi.Muted($"{def.FormatLabel}  ·  {def.EntryLabel}"));
-        row.Add(HudUi.Muted($"${def.PayoutFor(1)} to win  ·  {def.FieldSize + 1} anglers"));
+        row.Add(HudUi.Muted($"{def.PlacesPurseLabel}  ·  {def.FieldSize + 1} anglers"));
+        row.Add(HudUi.Muted(def.LunkerPurseLabel));
 
-        if (!registered && !director.AffordableFee(def))
+        bool locked = !director.MeetsReputation(def);
+        if (locked)
+            row.Add(HudUi.LockLine(def.ReputationLockLabel));
+        else if (!registered && !director.AffordableFee(def))
             row.Add(HudUi.Muted("Not enough money"));
+        else if (!registered && director.HasRegistrationOn(occurrence.DayIndex) && !director.HasPassed(occurrence))
+            row.Add(HudUi.Muted("Already entered a tournament that day"));
 
         var actions = new VisualElement();
         actions.AddToClassList("hud-tourney-actions");
@@ -879,6 +1171,7 @@ public class GameHud : MonoBehaviour
         director.Register(occurrence);
         // An entry fee has just left the wallet; don't make a crash refund it.
         SaveService.Instance?.Save();
+        tourneyTab = TourneyTab.Entered;
         OpenTournaments();
     }
 
@@ -897,8 +1190,9 @@ public class GameHud : MonoBehaviour
         VisualElement body = BeginCard("Skip ahead", OpenTournaments);
         body.Add(HudUi.Body($"Sleep through to the {def.DisplayName}?"));
         body.Add(HudUi.Muted(days == 1
-            ? $"You wake on {calendar.DateLabelFor(occurrence.DayIndex)}, one day from now."
-            : $"You wake on {calendar.DateLabelFor(occurrence.DayIndex)}, {days} days from now."));
+            ? $"You wake at the cabin on {calendar.DateLabelFor(occurrence.DayIndex)}, one day from now."
+            : $"You wake at the cabin on {calendar.DateLabelFor(occurrence.DayIndex)}, {days} days from now."));
+        body.Add(HudUi.Muted($"Boat to the camp by {GameCalendar.FormatHour(def.StartHour)} or you're left out."));
 
         director.RegistrationsBefore(occurrence.DayIndex, skipScratch);
         if (skipScratch.Count > 0)
@@ -981,7 +1275,7 @@ public class GameHud : MonoBehaviour
         if (progress == null)
             return;
 
-        CloseLurePicker();
+        ClosePopovers();
         VisualElement body = BeginCard(title, back);
         body.Add(HudUi.Body(prompt));
 
@@ -1023,18 +1317,71 @@ public class GameHud : MonoBehaviour
         if (modalCard == null || result == null)
             return;
 
-        CloseLurePicker();
+        ClosePopovers();
+        if (result.Placed || result.Paid)
+            ShowPrize(result);
+        else
+            ShowTournamentStanding(result);
+    }
+
+    void ShowPrize(TournamentResult result)
+    {
+        VisualElement body = BeginCard(result.DisplayName, CloseAllOverlays);
+        modalCard.EnableInClassList("hud-card--prize", true);
+
+        var prize = new VisualElement();
+        prize.AddToClassList("hud-prize");
+        prize.Add(HudUi.Glyph("hud-prize-mark", HudUi.PaintTrophy));
+        Label headline = HudUi.Title(result.PrizeHeadline);
+        headline.AddToClassList("hud-prize-place");
+        prize.Add(headline);
+        prize.Add(HudUi.Body($"{result.Pounds:0.00} lb  ·  {result.Fish} fish"));
+        AddLunkerNotes(prize, result);
+        if (result.Penalty > 0.001f)
+            prize.Add(HudUi.Muted($"Late penalty −{result.Penalty:0.00} lb"));
+
+        var haul = new VisualElement();
+        haul.AddToClassList("hud-prize-haul");
+        Label money = HudUi.Title(result.Payout > 0 ? $"+${result.Payout}" : "No payout");
+        money.AddToClassList("hud-prize-money");
+        haul.Add(money);
+        if (result.PlacePayout > 0 && result.LunkerPayout > 0)
+            haul.Add(HudUi.Muted($"Place ${result.PlacePayout}  ·  Lunkers ${result.LunkerPayout}"));
+        else if (result.LunkerPayout > 0)
+            haul.Add(HudUi.Muted("Lunker side pot"));
+        if (result.Reputation > 0)
+        {
+            Label rep = HudUi.Body($"+{result.Reputation} Reputation");
+            rep.AddToClassList("hud-prize-rep");
+            haul.Add(rep);
+        }
+
+        prize.Add(haul);
+        body.Add(prize);
+
+        var actions = new VisualElement();
+        actions.AddToClassList("hud-form-actions");
+        if (result.HasStandings)
+            actions.Add(HudUi.TextButton("View standings", () => ShowTournamentStandings(result)));
+        actions.Add(HudUi.TextButton("Collect", CloseAllOverlays, true));
+        body.Add(actions);
+        ShowModal();
+    }
+
+    void ShowTournamentStanding(TournamentResult result)
+    {
         VisualElement body = BeginCard(result.DisplayName, CloseAllOverlays);
 
         if (result.Forfeited)
         {
             body.Add(HudUi.Title("Missed the weigh-in"));
-            body.Add(HudUi.Body("The scales closed before you got back."));
+            body.Add(HudUi.Body("The camp scales closed before you got back."));
         }
         else
         {
-            body.Add(HudUi.Title(result.Won ? "You won!" : result.PlaceLabel));
+            body.Add(HudUi.Title(result.PlaceLabel));
             body.Add(HudUi.Body($"{result.Pounds:0.00} lb  ·  {result.Fish} fish"));
+            AddLunkerNotes(body, result);
         }
 
         if (result.Penalty > 0.001f)
@@ -1043,22 +1390,100 @@ public class GameHud : MonoBehaviour
         var purse = new VisualElement();
         purse.AddToClassList("hud-section");
         purse.Add(HudUi.Muted("Purse"));
-        purse.Add(HudUi.Body(result.Payout > 0 ? $"${result.Payout}" : "No payout"));
+        purse.Add(HudUi.Body("No payout"));
         if (result.EntryFee > 0)
-            purse.Add(HudUi.Muted($"Entry was ${result.EntryFee}  ·  net {(result.Net >= 0 ? "+" : "−")}${Mathf.Abs(result.Net)}"));
+            purse.Add(HudUi.Muted($"Entry was ${result.EntryFee}"));
         body.Add(purse);
 
-        if (!string.IsNullOrEmpty(result.WinnerName))
-        {
-            var top = new VisualElement();
-            top.AddToClassList("hud-section");
-            top.Add(HudUi.Muted("Big bag"));
-            top.Add(HudUi.Body($"{result.WinnerName}  ·  {result.WinnerPounds:0.00} lb"));
-            body.Add(top);
-        }
-
+        var actions = new VisualElement();
+        actions.AddToClassList("hud-form-actions");
+        if (result.HasStandings)
+            actions.Add(HudUi.TextButton("View standings", () => ShowTournamentStandings(result), true));
+        body.Add(actions);
         ShowModal();
     }
+
+    static void AddLunkerNotes(VisualElement parent, TournamentResult result)
+    {
+        if (result.WonLunkerLargemouth)
+            parent.Add(HudUi.Body($"Largemouth lunker  ·  {result.LunkerLargemouth:0.00} lb"));
+        if (result.WonLunkerSmallmouth)
+            parent.Add(HudUi.Body($"Smallmouth lunker  ·  {result.LunkerSmallmouth:0.00} lb"));
+    }
+
+    void ShowTournamentStandings(TournamentResult result)
+    {
+        VisualElement body = BeginCard("Standings", CloseAllOverlays);
+        modalCard.EnableInClassList("hud-card--standings", true);
+        body.Add(HudUi.Muted(result.DisplayName));
+
+        var table = new VisualElement();
+        table.AddToClassList("hud-standings");
+        table.Add(StandingsHeader());
+        IReadOnlyList<TournamentStanding> rows = result.Standings;
+        for (int i = 0; i < rows.Count; i++)
+            table.Add(StandingsRow(i + 1, rows[i]));
+        body.Add(table);
+
+        var actions = new VisualElement();
+        actions.AddToClassList("hud-form-actions");
+        actions.Add(HudUi.TextButton("Back", () => ShowTournamentResult(result)));
+        body.Add(actions);
+        ShowModal();
+    }
+
+    static VisualElement StandingsHeader()
+    {
+        var row = new VisualElement();
+        row.AddToClassList("hud-standings-row");
+        row.AddToClassList("hud-standings-row--head");
+        row.Add(StandingsCell("#", "hud-standings-place"));
+        row.Add(StandingsCell("Angler", "hud-standings-name"));
+        row.Add(StandingsCell("Fish", "hud-standings-fish"));
+        row.Add(StandingsCell("Weight", "hud-standings-weight"));
+        Label lm = StandingsCell("LM", "hud-standings-lunker");
+        lm.tooltip = "Largemouth lunker";
+        row.Add(lm);
+        Label sm = StandingsCell("SM", "hud-standings-lunker");
+        sm.tooltip = "Smallmouth lunker";
+        row.Add(sm);
+        return row;
+    }
+
+    static VisualElement StandingsRow(int place, TournamentStanding standing)
+    {
+        var row = new VisualElement();
+        row.AddToClassList("hud-standings-row");
+        if (standing.IsPlayer)
+            row.AddToClassList("hud-standings-row--player");
+
+        row.Add(StandingsCell(place.ToString(), "hud-standings-place"));
+        row.Add(StandingsCell(string.IsNullOrEmpty(standing.Name) ? "—" : standing.Name, "hud-standings-name"));
+        row.Add(StandingsCell(standing.Fish.ToString(), "hud-standings-fish"));
+        row.Add(StandingsCell(FormatPounds(standing.Pounds), "hud-standings-weight"));
+
+        Label lm = StandingsCell(FormatPounds(standing.LunkerLargemouth), "hud-standings-lunker");
+        if (standing.WonLunkerLargemouth)
+            lm.AddToClassList("hud-standings-lunker--won");
+        row.Add(lm);
+
+        Label sm = StandingsCell(FormatPounds(standing.LunkerSmallmouth), "hud-standings-lunker");
+        if (standing.WonLunkerSmallmouth)
+            sm.AddToClassList("hud-standings-lunker--won");
+        row.Add(sm);
+        return row;
+    }
+
+    static Label StandingsCell(string text, string className)
+    {
+        var label = new Label(text);
+        label.AddToClassList("hud-standings-cell");
+        label.AddToClassList(className);
+        label.pickingMode = PickingMode.Ignore;
+        return label;
+    }
+
+    static string FormatPounds(float pounds) => pounds > 0.01f ? $"{pounds:0.00}" : "—";
 
     void RefreshTournamentChip()
     {
@@ -1066,8 +1491,127 @@ public class GameHud : MonoBehaviour
             return;
 
         string status = director != null ? director.StatusLine : "";
-        tourneyChip.text = status;
-        tourneyChip.style.display = string.IsNullOrEmpty(status) ? DisplayStyle.None : DisplayStyle.Flex;
+        bool live = !string.IsNullOrEmpty(status);
+        if (tourneyChipLabel != null)
+            tourneyChipLabel.text = status;
+        tourneyChip.style.display = live ? DisplayStyle.Flex : DisplayStyle.None;
+        RefreshTourneyChevron();
+        if (!live)
+            CloseBagPopover();
+        else if (BagPopoverOpen)
+            FillBagPopover();
+    }
+
+    bool BagPopoverOpen => bagPopover != null && bagPopover.style.display == DisplayStyle.Flex;
+
+    void ToggleBagPopover()
+    {
+        if (CatchSheetOpen || MapJournalOpen)
+            return;
+        if (BagPopoverOpen)
+        {
+            CloseBagPopover();
+            return;
+        }
+
+        if (director == null || string.IsNullOrEmpty(director.StatusLine))
+            return;
+
+        CloseLurePicker();
+        FillBagPopover();
+        bagPopover.style.display = DisplayStyle.Flex;
+        popoverCatcher.style.display = DisplayStyle.Flex;
+        bagPopover.BringToFront();
+        bagPopover.RegisterCallback<GeometryChangedEvent>(PlaceBagPopover);
+        RefreshTourneyChevron();
+        HudInput.PopupOpen = false;
+    }
+
+    void FillBagPopover()
+    {
+        if (bagPopover == null)
+            return;
+
+        bagPopover.Clear();
+        bagPopover.Add(HudUi.Muted("Live bag"));
+
+        IReadOnlyList<CatchRecord> kept = director != null ? director.Bag : null;
+        if (kept == null || kept.Count == 0)
+        {
+            bagPopover.Add(HudUi.Body("No keepers yet"));
+            return;
+        }
+
+        float bestLm = 0f;
+        float bestSm = 0f;
+        for (int i = 0; i < kept.Count; i++)
+        {
+            CatchRecord fish = kept[i];
+            if (TournamentBag.IsLargemouth(fish))
+                bestLm = Mathf.Max(bestLm, fish.Pounds);
+            else if (TournamentBag.IsSmallmouth(fish))
+                bestSm = Mathf.Max(bestSm, fish.Pounds);
+        }
+
+        for (int i = 0; i < kept.Count; i++)
+        {
+            CatchRecord fish = kept[i];
+            var row = new VisualElement();
+            row.AddToClassList("hud-bag-row");
+
+            var name = HudUi.Body($"{SpeciesShort(fish.SpeciesName)}  {fish.Pounds:0.00} lb");
+            name.AddToClassList("hud-bag-name");
+            row.Add(name);
+
+            if (TournamentBag.IsLargemouth(fish) && fish.Pounds >= bestLm - 0.001f)
+                row.Add(HudUi.Pill("LM"));
+            else if (TournamentBag.IsSmallmouth(fish) && fish.Pounds >= bestSm - 0.001f)
+                row.Add(HudUi.Pill("SM"));
+
+            bagPopover.Add(row);
+        }
+
+        bagPopover.Add(HudUi.Muted($"{director.BagFish}/{director.BagLimit}  ·  {director.BagPounds:0.00} lb"));
+    }
+
+    void PlaceBagPopover(GeometryChangedEvent _)
+    {
+        bagPopover.UnregisterCallback<GeometryChangedEvent>(PlaceBagPopover);
+        if (tourneyChip == null)
+            return;
+
+        Rect chip = tourneyChip.worldBound;
+        Rect panel = root.worldBound;
+        float width = bagPopover.resolvedStyle.width;
+        if (width < 1f)
+            width = 280f;
+        bagPopover.style.left = chip.center.x - width * 0.5f - panel.x;
+        bagPopover.style.top = chip.yMax - panel.yMin + 8f;
+    }
+
+    void CloseBagPopover()
+    {
+        if (bagPopover != null)
+            bagPopover.style.display = DisplayStyle.None;
+        RefreshTourneyChevron();
+        if (lurePopover == null || lurePopover.style.display != DisplayStyle.Flex)
+        {
+            if (popoverCatcher != null)
+                popoverCatcher.style.display = DisplayStyle.None;
+        }
+    }
+
+    void RefreshTourneyChevron()
+    {
+        if (tourneyChevron == null)
+            return;
+        tourneyChevron.EnableInClassList("hud-tourney-chevron--open", BagPopoverOpen);
+    }
+
+    void ClosePopovers()
+    {
+        CloseLurePicker();
+        CloseBagPopover();
     }
 
     void ToggleLurePicker()
@@ -1096,8 +1640,8 @@ public class GameHud : MonoBehaviour
 
                 var swatch = new VisualElement();
                 swatch.AddToClassList("hud-lure-swatch");
-                swatch.style.backgroundColor = lure.Color;
                 swatch.pickingMode = PickingMode.Ignore;
+                ApplyLureSwatch(swatch, lure.Icon, lure.Color);
                 var label = new Label(lure.DisplayName);
                 label.AddToClassList("hud-lure-name");
                 label.pickingMode = PickingMode.Ignore;
@@ -1135,8 +1679,35 @@ public class GameHud : MonoBehaviour
     {
         if (lurePopover != null)
             lurePopover.style.display = DisplayStyle.None;
-        if (popoverCatcher != null)
+        if (popoverCatcher != null && !BagPopoverOpen)
             popoverCatcher.style.display = DisplayStyle.None;
+    }
+
+    static void ApplyLureSwatch(VisualElement swatch, Sprite icon, Color fallback)
+    {
+        if (swatch == null)
+            return;
+        if (icon != null)
+        {
+            swatch.style.backgroundImage = new StyleBackground(icon);
+            swatch.style.backgroundColor = StyleKeyword.Null;
+            swatch.EnableInClassList("hud-lure-swatch--photo", true);
+        }
+        else
+        {
+            swatch.style.backgroundImage = new StyleBackground(StyleKeyword.None);
+            swatch.style.backgroundColor = fallback;
+            swatch.EnableInClassList("hud-lure-swatch--photo", false);
+        }
+    }
+
+    static Sprite IconForCatch(CatchRecord record)
+    {
+        if (record == null)
+            return null;
+        ContentRegistry registry = ContentRegistry.Instance;
+        LureDefinition lure = registry != null ? registry.LureNamed(record.LureName) : null;
+        return lure != null ? lure.Icon : null;
     }
 
     /// <summary>
@@ -1147,6 +1718,9 @@ public class GameHud : MonoBehaviour
     VisualElement BeginCard(string title, System.Action close)
     {
         modalCard.Clear();
+        modalCard.EnableInClassList("hud-card--prize", false);
+        modalCard.EnableInClassList("hud-card--tall", false);
+        modalCard.EnableInClassList("hud-card--standings", false);
         AddCardHeader(title, close);
 
         var body = new ScrollView(ScrollViewMode.Vertical);
@@ -1188,7 +1762,7 @@ public class GameHud : MonoBehaviour
 
     void CloseAllOverlays()
     {
-        CloseLurePicker();
+        ClosePopovers();
         HudInput.Typing = false;
         if (modalLayer != null)
             modalLayer.style.display = DisplayStyle.None;
@@ -1250,7 +1824,7 @@ public class GameHud : MonoBehaviour
         if (fishing != null && fishing.Fight != null && fishing.Fight.Playing)
             return;
 
-        CloseLurePicker();
+        ClosePopovers();
         if (modalLayer != null)
             modalLayer.style.display = DisplayStyle.None;
 
@@ -1298,6 +1872,8 @@ public class GameHud : MonoBehaviour
 
         if (selectedMarked != null && !selectedCluster.Contains(selectedMarked))
             selectedCluster.Clear();
+        if (selectedMarked == null && selectedCluster.Count > 0)
+            selectedMarked = selectedCluster[0];
 
         mapSonar?.SetMarked(markedScratch, selectedMarked);
         journalMap?.SetMarked(markedScratch, selectedMarked);
@@ -1330,6 +1906,7 @@ public class GameHud : MonoBehaviour
                 var facts = new VisualElement();
                 facts.AddToClassList("hud-mark-facts");
                 FillCatchFacts(facts, selectedMarked);
+                AddRemovePinButton(facts);
                 mapJournalDetail.Add(facts);
             }
 
@@ -1346,6 +1923,19 @@ public class GameHud : MonoBehaviour
         }
 
         FillCatchFacts(mapJournalDetail, selectedMarked);
+        AddRemovePinButton(mapJournalDetail);
+    }
+
+    void AddRemovePinButton(VisualElement parent)
+    {
+        parent.Add(HudUi.TextButton("Remove", UnmarkSelectedMark));
+    }
+
+    void UnmarkSelectedMark()
+    {
+        if (selectedMarked == null || !selectedMarked.Marked)
+            return;
+        progress?.UnmarkCatch(selectedMarked);
     }
 
     void FillClusterList()
@@ -1381,8 +1971,8 @@ public class GameHud : MonoBehaviour
 
             var swatch = new VisualElement();
             swatch.AddToClassList("hud-lure-swatch");
-            swatch.style.backgroundColor = record.LureColor;
             swatch.pickingMode = PickingMode.Ignore;
+            ApplyLureSwatch(swatch, IconForCatch(record), record.LureColor);
             row.Add(swatch);
             row.Add(HudUi.Body($"{SpeciesShort(record.SpeciesName)}  {record.Pounds:0.00} lb"));
             list.Add(row);
@@ -1400,8 +1990,8 @@ public class GameHud : MonoBehaviour
         lureRow.AddToClassList("hud-catch-lure");
         var swatch = new VisualElement();
         swatch.AddToClassList("hud-lure-swatch");
-        swatch.style.backgroundColor = record.LureColor;
         swatch.pickingMode = PickingMode.Ignore;
+        ApplyLureSwatch(swatch, IconForCatch(record), record.LureColor);
         lureRow.Add(swatch);
         lureRow.Add(HudUi.Body($"Caught on {record.LureName}"));
         parent.Add(lureRow);
@@ -1417,5 +2007,12 @@ public class GameHud : MonoBehaviour
         if (record.WaterTempF > 1f)
             facts.Add(HudUi.Body($"{record.WaterTempF:0}° water"));
         parent.Add(facts);
+    }
+
+    enum TourneyTab
+    {
+        Board,
+        Entered,
+        Past
     }
 }

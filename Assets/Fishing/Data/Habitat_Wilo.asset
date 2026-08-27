@@ -18,7 +18,7 @@ MonoBehaviour:
   openWaterScatter: 0.055
   depthWeight: 1
   dropoffWeight: 0.55
-  rockWeight: 1.7
+  rockWeight: 1.87
   woodWeight: 2.4
   vegetationWeight: 1.15
   structureSoftness: 0.38
@@ -36,14 +36,17 @@ MonoBehaviour:
   smallWoodMul: 0.75
   largeWoodMul: 1.35
   smallRockMul: 0.7
-  largeRockMul: 1.55
+  largeRockMul: 1.65
   smallDropoffMul: 0.35
   largeDropoffMul: 1.2
   sizePriorPower: 3.6
-  rockPeakDepthFeet: 20
-  rockPeakWidthFeet: 7
+  sizeShallowFeet: 5
+  sizeDeepFeet: 36
+  sizeBlend: 0.9
+  rockPeakDepthFeet: 16
+  rockPeakWidthFeet: 12
   rockTrophyDepthFeet: 42
-  rockOffBand: 0.18
+  rockOffBand: 0.3
   dropoffSampleMeters: 8
   dropoffStrongFeet: 12
   rockReachMeters: 2.2
@@ -66,12 +69,18 @@ MonoBehaviour:
     vegetation: 1.45
     minPounds: 0.5
     trophyPounds: 12
+    shallowSizeT: 0.08
+    deepSizeT: 0.2
+    woodSizeT: 0.33
+    woodSizeBoost: 0
+    rockSizeBoost: 0.36
+    rockDepthEven: 0.35
   - species: {fileID: 11400000, guid: 6698b3b9170324a3dac0e050c5a90b89, type: 2}
     idealDepthFeet: 25
-    smallIdealDepthFeet: 18
+    smallIdealDepthFeet: 14
     largeIdealDepthFeet: 42
     depthSizePower: 1.8
-    depthComfortFeet: 10
+    depthComfortFeet: 12
     minDepthFeet: 5
     maxDepthFeet: 60
     dropoff: 1.55
@@ -81,3 +90,9 @@ MonoBehaviour:
     vegetation: 0.12
     minPounds: 0.5
     trophyPounds: 8
+    shallowSizeT: 0.12
+    deepSizeT: 0.36
+    woodSizeT: 0
+    woodSizeBoost: 0
+    rockSizeBoost: 0.46
+    rockDepthEven: 0.75

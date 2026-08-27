@@ -47,6 +47,7 @@ public class PlayerSave
     /// <summary>Blank means the player has not signed a tournament sheet yet.</summary>
     public string displayName = "";
     public int money;
+    public int reputation;
     public string bestSpecies = "";
     public float bestBassPounds;
 

@@ -23,7 +23,7 @@ public class HabitatProfile : ScriptableObject
     [Range(0f, 2.5f)] public float depthWeight = 1f;
     [Tooltip("Boost on real cover at a break. Empty slopes stay thin.")]
     [Range(0f, 2.5f)] public float dropoffWeight = 0.55f;
-    [Range(0f, 2.5f)] public float rockWeight = 1.7f;
+    [Range(0f, 2.5f)] public float rockWeight = 1.87f;
     [Range(0f, 4f)] public float woodWeight = 2.4f;
     [Range(0f, 2.5f)] public float vegetationWeight = 1.15f;
     [Tooltip("Lower keeps wood/rock from looking identical to a weed flat. 0.38 leaves headroom for size taste.")]
@@ -57,19 +57,27 @@ public class HabitatProfile : ScriptableObject
     [Range(0.2f, 2f)] public float smallWoodMul = 0.75f;
     [Range(0.2f, 2f)] public float largeWoodMul = 1.35f;
     [Range(0.2f, 2f)] public float smallRockMul = 0.7f;
-    [Range(0.2f, 2f)] public float largeRockMul = 1.55f;
+    [Range(0.2f, 2f)] public float largeRockMul = 1.65f;
     [Range(0.2f, 2f)] public float smallDropoffMul = 0.35f;
     [Range(0.2f, 2f)] public float largeDropoffMul = 1.2f;
-    [Tooltip("Higher = fatter pile of average fish, thinner trophy tail. ~3.6 is ~3 lb LM / ~2 lb SM.")]
-    [Range(1.5f, 5f)] public float sizePriorPower = 3.6f;
+    [Tooltip("Higher = more small fish in the count. Mean weight is retargeted by depth and cover after this draw.")]
+    [Range(1.5f, 5f)]     public float sizePriorPower = 3.6f;
+
+    [Header("Size vs depth — occupancy still picks the knot; this retargets the roll")]
+    [Tooltip("Gameplay feet where size aim is the species shallow target.")]
+    public float sizeShallowFeet = 5f;
+    [Tooltip("Gameplay feet where size aim reaches the species deep target.")]
+    public float sizeDeepFeet = 36f;
+    [Tooltip("0 = ignore this aim (pure occupancy draw). 1 = size follows depth/cover only.")]
+    [Range(0.35f, 0.95f)] public float sizeBlend = 0.9f;
 
     [Header("Rock depth band (gameplay feet)")]
-    [Tooltip("Rock is strongest here. 20 with width 6 is roughly 15–25 ft.")]
-    public float rockPeakDepthFeet = 20f;
-    public float rockPeakWidthFeet = 7f;
+    [Tooltip("Rock is strongest here. Width 12 keeps 10 ft and 20 ft both in play.")]
+    public float rockPeakDepthFeet = 16f;
+    public float rockPeakWidthFeet = 12f;
     [Tooltip("Trophy-class fish shift their rock peak toward this depth.")]
     public float rockTrophyDepthFeet = 42f;
-    [Range(0f, 0.5f)] public float rockOffBand = 0.18f;
+    [Range(0f, 0.5f)] public float rockOffBand = 0.3f;
 
     [Header("Drop-off")]
     public float dropoffSampleMeters = 8f;
@@ -102,6 +110,14 @@ public class HabitatProfile : ScriptableObject
         }
 
         return sum;
+    }
+
+    public float OccupancyForSize(FishSpecies kind, in HabitatFeatures features, float sizeT)
+    {
+        SpeciesHabitat taste = Find(kind);
+        if (taste == null || kind == null)
+            return 0f;
+        return OccupancyAt(taste, features, sizeT);
     }
 
     public SpeciesHabitat Find(FishSpecies kind)
@@ -140,6 +156,67 @@ public class HabitatProfile : ScriptableObject
 
         float t = gap / reach;
         return 1f / (1f + t * t);
+    }
+
+    /// <summary>
+    /// Lake-wide willingness to bite. <see cref="activity"/> is a typical day;
+    /// phase, temperature, weather, and wind swing around it. Never zero.
+    /// Time of day is applied later, per lure, on the take roll — it does not
+    /// belong here because occupancy must stay independent of the clock.
+    /// </summary>
+    public float EvaluateActivity(in LakeConditions c)
+    {
+        float a = Mathf.Clamp01(activity);
+        a *= PhaseMul(c.Phase);
+        a *= TempMul(c.WaterTempF);
+        a *= WeatherMul(c.Weather);
+        a *= WindMul(c.WindMph);
+        return Mathf.Clamp(a, 0.12f, 0.95f);
+    }
+
+    static float PhaseMul(FishingPhase phase)
+    {
+        switch (phase)
+        {
+            case FishingPhase.Prespawn: return 1.15f;
+            case FishingPhase.Spawn: return 1.05f;
+            case FishingPhase.Postspawn: return 0.82f;
+            case FishingPhase.Summer: return 0.86f;
+            case FishingPhase.FallFeeding: return 1.22f;
+            case FishingPhase.Winter: return 0.52f;
+            default: return 1f;
+        }
+    }
+
+    static float TempMul(float waterTempF)
+    {
+        if (waterTempF < 45f)
+            return 0.4f;
+        if (waterTempF < 55f)
+            return Mathf.Lerp(0.4f, 0.88f, (waterTempF - 45f) / 10f);
+        if (waterTempF <= 76f)
+            return 1f;
+        if (waterTempF < 86f)
+            return Mathf.Lerp(1f, 0.5f, (waterTempF - 76f) / 10f);
+        return 0.48f;
+    }
+
+    static float WeatherMul(WeatherKind weather)
+    {
+        if (weather == WeatherKind.Rain)
+            return 1.12f;
+        if (weather == WeatherKind.Sunny)
+            return 0.92f;
+        return 1f;
+    }
+
+    static float WindMul(float windMph)
+    {
+        if (windMph < 2f)
+            return 0.94f;
+        if (windMph <= 12f)
+            return 1.05f;
+        return Mathf.Lerp(1.05f, 0.8f, Mathf.Clamp01((windMph - 12f) / 10f));
     }
 
     public float SaturateVegetation(float rawCount)
@@ -189,10 +266,37 @@ public class HabitatProfile : ScriptableObject
             sizeT = Mathf.Lerp(BandLow(index), BandHigh(index), within);
         }
 
+        // Occupancy decides who is around; depth and cover decide how big they
+        // run. Without this every spot averages the same ~3 lb bass.
+        sizeT = Mathf.Lerp(Mathf.Clamp01(sizeT), SizeAim(taste, features), sizeBlend);
         sizeT = Mathf.Clamp01(sizeT);
         float pounds = min + (trophy - min) * sizeT;
         pounds *= 1f + (Mathf.Clamp01(v) - 0.5f) * 0.05f;
         return Mathf.Clamp(pounds, min, trophy);
+    }
+
+    /// <summary>
+    /// Where size should sit given depth and cover. Open water climbs slowly.
+    /// Wood pulls largemouth toward a flat ~4 lb. Rock, especially boulders,
+    /// is what actually grows fish at 20–30 ft.
+    /// </summary>
+    float SizeAim(SpeciesHabitat taste, in HabitatFeatures features)
+    {
+        float deepT = Mathf.InverseLerp(
+            sizeShallowFeet,
+            Mathf.Max(sizeShallowFeet + 1f, sizeDeepFeet),
+            features.DepthFeet);
+        float aim = Mathf.Lerp(taste.shallowSizeT, taste.deepSizeT, deepT);
+        // Cobble stays near the depth baseline; boulders pull up as it gets deeper.
+        float rockQ = Mathf.Pow(Mathf.Clamp(features.Rock, 0f, 1.5f), 1.35f);
+        aim += taste.rockSizeBoost * rockQ * Mathf.Lerp(0.28f, 0.72f, deepT);
+        // Stumps / fallen trees: pull toward a flat target so wood does not
+        // climb with depth the way rock does.
+        if (taste.woodSizeT > 0.05f)
+            aim = Mathf.Lerp(aim, taste.woodSizeT, Mathf.Clamp01(features.Wood) * 0.92f);
+        else
+            aim += taste.woodSizeBoost * features.Wood;
+        return Mathf.Clamp01(aim);
     }
 
     static float BandLow(int index)
@@ -211,6 +315,14 @@ public class HabitatProfile : ScriptableObject
     {
         baseFishPerThousandSqMeters = Mathf.Max(0.05f, baseFishPerThousandSqMeters);
         maxFishPerThousandSqMeters = Mathf.Max(baseFishPerThousandSqMeters, maxFishPerThousandSqMeters);
+        if (sizeShallowFeet < 0.5f)
+            sizeShallowFeet = 5f;
+        if (sizeDeepFeet < sizeShallowFeet + 1f)
+            sizeDeepFeet = 36f;
+        if (sizeBlend < 0.3f)
+            sizeBlend = 0.9f;
+        sizeShallowFeet = Mathf.Max(1f, sizeShallowFeet);
+        sizeDeepFeet = Mathf.Max(sizeShallowFeet + 4f, sizeDeepFeet);
         rockPeakWidthFeet = Mathf.Max(1f, rockPeakWidthFeet);
         rockTrophyDepthFeet = Mathf.Max(rockPeakDepthFeet, rockTrophyDepthFeet);
         pointSampleMeters = Mathf.Clamp(pointSampleMeters, 4f, 60f);
@@ -242,6 +354,23 @@ public class HabitatProfile : ScriptableObject
             if (taste.depthSizePower < 0.2f)
                 taste.depthSizePower = 1f;
             taste.depthSizePower = Mathf.Clamp(taste.depthSizePower, 0.6f, 3f);
+            if (taste.shallowSizeT < 0.02f && taste.deepSizeT < 0.02f)
+            {
+                bool smallmouthLike = taste.rock > 1.5f;
+                taste.shallowSizeT = smallmouthLike ? 0.12f : 0.08f;
+                taste.deepSizeT = smallmouthLike ? 0.36f : 0.2f;
+                taste.woodSizeT = smallmouthLike ? 0f : 0.33f;
+                taste.woodSizeBoost = 0f;
+                taste.rockSizeBoost = smallmouthLike ? 0.46f : 0.36f;
+                taste.rockDepthEven = smallmouthLike ? 0.75f : 0.35f;
+            }
+
+            taste.shallowSizeT = Mathf.Clamp01(taste.shallowSizeT);
+            taste.deepSizeT = Mathf.Clamp(taste.deepSizeT, taste.shallowSizeT, 0.95f);
+            taste.woodSizeT = Mathf.Clamp01(taste.woodSizeT);
+            taste.woodSizeBoost = Mathf.Clamp(taste.woodSizeBoost, 0f, 0.4f);
+            taste.rockSizeBoost = Mathf.Clamp(taste.rockSizeBoost, 0f, 0.55f);
+            taste.rockDepthEven = Mathf.Clamp01(taste.rockDepthEven);
         }
     }
 
@@ -270,7 +399,12 @@ public class HabitatProfile : ScriptableObject
         float terrainMul = 1f + dropoffWeight * breakTaste + pointWeight * pointTaste;
         float whisper = dropoffSolo * breakTaste + pointSolo * pointTaste;
         float scatter = openWaterScatter * Mathf.Pow(1f - sizeT, 2.2f);
-        return envelope * (sat * terrainMul + whisper + scatter);
+
+        // Rock occupancy should not pile twice as hard at 20 ft as at 10 ft.
+        // Small fish flatten onto rock; trophies still follow the depth envelope.
+        float even = taste.rockDepthEven * Mathf.Clamp(features.Rock, 0f, 1.5f) * (1f - sizeT);
+        float env = Mathf.Lerp(envelope, 1f, Mathf.Clamp01(even));
+        return env * (sat * terrainMul + whisper + scatter);
     }
 
     static float DepthEnvelope(SpeciesHabitat taste, float feet, float sizeT)
@@ -327,4 +461,16 @@ public class SpeciesHabitat
     [Range(0f, 2f)] public float vegetation = 1f;
     public float minPounds = 0.5f;
     public float trophyPounds = 12f;
+    [Tooltip("Size knot aim in the shallows (0 = min lb, 1 = trophy).")]
+    [Range(0f, 0.6f)] public float shallowSizeT = 0.16f;
+    [Tooltip("Size knot aim in deep water before wood/rock bonuses.")]
+    [Range(0.15f, 0.8f)] public float deepSizeT = 0.4f;
+    [Tooltip("If > 0.05, wood pulls size toward this knot (largemouth stumps stay ~4 lb at any depth).")]
+    [Range(0f, 0.6f)] public float woodSizeT = 0f;
+    [Tooltip("Tiny additive wood bump when woodSizeT is unused (smallmouth).")]
+    [Range(0f, 0.4f)] public float woodSizeBoost = 0f;
+    [Tooltip("Extra size on rock that grows with depth. Deep boulders hold the big ones.")]
+    [Range(0f, 0.55f)] public float rockSizeBoost = 0f;
+    [Tooltip("How much small fish ignore the depth envelope when sitting on rock. Stops 20 ft rock from doubling 10 ft density.")]
+    [Range(0f, 1f)] public float rockDepthEven = 0f;
 }

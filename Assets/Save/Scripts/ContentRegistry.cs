@@ -38,11 +38,25 @@ public class ContentRegistry : ScriptableObject
     }
 
     public IReadOnlyList<LureDefinition> StarterLures => starterLures;
+    public IReadOnlyList<LureDefinition> Lures => lures;
 
     public LureDefinition Lure(string id)
     {
         Index(lures, ref lureById, l => l.Id);
         return Find(lureById, id);
+    }
+
+    public LureDefinition LureNamed(string displayName)
+    {
+        if (string.IsNullOrEmpty(displayName))
+            return null;
+        for (int i = 0; i < lures.Count; i++)
+        {
+            if (lures[i] != null && lures[i].DisplayName == displayName)
+                return lures[i];
+        }
+
+        return null;
     }
 
     public FishSpecies Species(string id)

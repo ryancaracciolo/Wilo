@@ -18,13 +18,6 @@ public class FishAgent : MonoBehaviour
     const float GiveUpRadius = 14f;
     const float StrikeRadius = 2.1f;
 
-    /// <summary>
-    /// Chances per second to commit while the lure is inside the strike radius.
-    /// Time in the zone is the whole tradeoff: a fast lure sweeps more water but
-    /// gives each fish only a moment, a bait left sitting gets asked repeatedly.
-    /// </summary>
-    const float CommitPerSecond = 0.5f;
-
     /// <summary>How long a fish will shadow a lure before losing interest.</summary>
     const float FollowPatience = 22f;
 
@@ -53,6 +46,9 @@ public class FishAgent : MonoBehaviour
     float followUntil;
     float followPhase;
     float columnT;
+    float biteActivity;
+    float biteAt;
+    bool judgedBite;
     float fightTime;
     float nextSurgeTime;
     float nextJumpTime;
@@ -107,6 +103,9 @@ public class FishAgent : MonoBehaviour
         ignoreUntil = 0f;
         followUntil = 0f;
         followPhase = Random.value * Mathf.PI * 2f;
+        judgedBite = false;
+        biteActivity = 0.5f;
+        biteAt = 0f;
         SetAnimatorSpeed(1f);
         if (prefabScale.sqrMagnitude < 0.0001f)
             prefabScale = Vector3.one * 0.25f;
@@ -127,6 +126,7 @@ public class FishAgent : MonoBehaviour
         angler = null;
         jumping = false;
         mood = Mood.Wander;
+        judgedBite = false;
         SetForceVisible(false);
         SetCastShadows(false);
         SetAnimatorSpeed(1f);
@@ -267,48 +267,80 @@ public class FishAgent : MonoBehaviour
             if (mood == Mood.Following)
             {
                 mood = Mood.Wander;
+                judgedBite = false;
                 PickDestination();
             }
 
             return;
         }
 
-        if (Time.time < ignoreUntil)
-            return;
-
         float planar = DistanceXZ(transform.position, lure.Position);
+        float range = Vector3.Distance(transform.position, lure.Position);
+        bool inStrike = range <= StrikeRadius;
+
         if (mood == Mood.Wander)
         {
-            if (planar > lure.NoticeRadius)
+            // Refuse / give-up still sulk, but a bait that then lands on them
+            // is always in play. Missed interest rolls do not lock anyone out.
+            if (Time.time < ignoreUntil && !inStrike)
                 return;
 
-            float activity = lake.SampleAt(lure.Position).Activity;
-            float notice = (0.18f + activity * 0.7f) * LureDepthFit(lure);
-            if (Random.value > notice)
-            {
-                ignoreUntil = Time.time + 7f;
+            if (!TryInterest(lure, range, inStrike))
                 return;
-            }
 
             mood = Mood.Following;
+            judgedBite = false;
             followUntil = Time.time + FollowPatience;
+            biteActivity = lake.CurrentActivity;
         }
 
         if (planar > GiveUpRadius || Time.time >= followUntil || DistanceXZ(transform.position, home) > ChaseLeash())
         {
             mood = Mood.Wander;
+            judgedBite = false;
             ignoreUntil = Time.time + 4f;
             PickDestination();
             return;
         }
 
-        destination = ShadowPoint(lure.Position);
-        if (Vector3.Distance(transform.position, lure.Position) > StrikeRadius)
+        if (!inStrike)
+        {
+            destination = ShadowPoint(lure.Position);
             return;
+        }
 
-        float appeal = 0.22f + lake.SampleAt(lure.Position).Activity * 0.65f;
-        float chance = appeal * lure.Liveliness * CommitPerSecond * Time.deltaTime;
-        if (Random.value > chance)
+        float depth = LureDepthFit(lure);
+        if (!judgedBite)
+        {
+            judgedBite = true;
+            float clock = 1f;
+            if (lure.Lure != null && lake.Conditions != null)
+            {
+                clock = lure.Lure.TimeOfDayTakeMul(
+                    lake.Conditions.Hour,
+                    lake.Conditions.DawnHour,
+                    lake.Conditions.DuskHour);
+            }
+
+            float take = Mathf.Clamp01(
+                (0.32f + biteActivity * 0.5f)
+                * Mathf.Lerp(0.35f, 1f, lure.Liveliness)
+                * depth
+                * clock);
+            if (Random.value > take)
+            {
+                mood = Mood.Wander;
+                ignoreUntil = Time.time + 5.5f;
+                PickDestination();
+                return;
+            }
+
+            biteAt = Time.time + Random.Range(0.45f, 1.2f);
+        }
+
+        // They've decided to eat: run the bait down instead of orbiting it.
+        destination = lure.Position;
+        if (Time.time < biteAt)
             return;
 
         // Hook() runs inside OfferStrike and is what actually sets Hooked.
@@ -321,8 +353,34 @@ public class FishAgent : MonoBehaviour
         }
 
         mood = Mood.Wander;
+        judgedBite = false;
         ignoreUntil = Time.time + 0.75f;
         PickDestination();
+    }
+
+    /// <summary>
+    /// Time × distance. Draw reach is where pull hits zero (moving vs rest).
+    /// Inside that, pull is linear with 3D range. The per-second chance is
+    /// applied every frame so a spinner that only spends 0.8 s near a fish
+    /// still gets a roll. A miss just waits; soaking a stump keeps rolling.
+    /// </summary>
+    bool TryInterest(LurePresence lure, float range, bool inStrike)
+    {
+        if (inStrike)
+            return true;
+
+        float reach = lure.NoticeRadius;
+        if (range >= reach || reach < 0.05f)
+            return false;
+
+        float perSecond = (1f - range / reach) * LureDepthFit(lure);
+        if (perSecond <= 0.0001f)
+            return false;
+
+        // Time.deltaTime is play/wall seconds (controller time), not the
+        // compressed day clock. A 40-minute game day does not speed this up.
+        float miss = Mathf.Pow(1f - Mathf.Clamp01(perSecond), Time.deltaTime);
+        return Random.value > miss;
     }
 
     /// <summary>

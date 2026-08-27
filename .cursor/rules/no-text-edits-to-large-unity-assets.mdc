@@ -1,0 +1,22 @@
+---
+description: Never edit large Unity scene/terrain assets as text; use Unity MCP instead
+alwaysApply: true
+---
+
+# Never text-edit large Unity assets
+
+Never write `Assets/WiloLake.unity` (~85 MB), `Assets/Environment/Terrain/WiloLake.asset`
+(~17 MB), or any text asset over ~2 MB through file-edit tools. Agent writes cap near 8 MB,
+so a rewrite truncates mid-YAML and Unity loads the fragment — terrain, lake, and folder
+GameObjects vanish and orphaned children collapse to the scene root.
+
+Change the scene via Unity MCP `Unity_RunCommand` instead: mutate through the editor API,
+`result.RegisterObjectModification(obj)` before edits, then `EditorSceneManager.SaveScene`.
+Reloading after an external change is `AssetDatabase.Refresh()` +
+`EditorSceneManager.OpenScene(path, OpenSceneMode.Single)`; this often exceeds the MCP
+timeout yet still completes, so re-query the root count before assuming failure.
+
+Prefer C# field initializers over scene values for MonoBehaviour tuning.
+
+Check `git diff --stat Assets/WiloLake.unity` before finishing. A huge line deletion means
+truncation — `git checkout -- Assets/WiloLake.unity`, then reload the scene.

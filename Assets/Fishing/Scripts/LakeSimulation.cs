@@ -100,14 +100,31 @@ public class LakeSimulation : MonoBehaviour
             conditions.AirTempF,
             conditions.WindFromDegrees,
             conditions.WindMph,
-            conditions.Weather);
+            conditions.Weather,
+            conditions.DawnHour,
+            conditions.DuskHour);
+    }
+
+    /// <summary>Lake-wide willingness to bite. Cheap; does not query cover.</summary>
+    public float CurrentActivity
+    {
+        get
+        {
+            if (profile == null)
+                return Mathf.Clamp01(activity);
+            if (conditions == null)
+                return profile.activity;
+            return profile.EvaluateActivity(SnapshotConditions());
+        }
     }
 
     public HabitatSample SampleAt(Vector3 world)
     {
         HabitatFeatures features = SampleFeatures(world);
         float depth = GeometricDepthMeters(world);
-        return Habitat.Sample(depth, features, species);
+        if (conditions == null)
+            return Habitat.Sample(depth, features, species);
+        return Habitat.Sample(depth, features, species, SnapshotConditions());
     }
 
     public HabitatFeatures SampleFeatures(Vector3 world)

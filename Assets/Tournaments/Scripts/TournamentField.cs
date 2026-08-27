@@ -1,13 +1,19 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-/// <summary>One line on the leaderboard.</summary>
+/// <summary>One line on the leaderboard. Saved with the result, so keep the fields flat.</summary>
+[Serializable]
 public struct TournamentStanding
 {
     public string Name;
     public float Pounds;
     public int Fish;
     public bool IsPlayer;
+    public float LunkerLargemouth;
+    public float LunkerSmallmouth;
+    public bool WonLunkerLargemouth;
+    public bool WonLunkerSmallmouth;
 }
 
 /// <summary>
@@ -77,11 +83,15 @@ public static class TournamentField
         if (fish == 0)
             pounds = 0f;
 
+        SplitLunkers(rng, fish, pounds, out float lm, out float sm);
+
         return new TournamentStanding
         {
             Name = name,
             Pounds = Mathf.Round(pounds * 100f) * 0.01f,
-            Fish = fish
+            Fish = fish,
+            LunkerLargemouth = lm,
+            LunkerSmallmouth = sm
         };
     }
 
@@ -91,13 +101,106 @@ public static class TournamentField
         float jitter = 0.9f + (float)rng.NextDouble() * 0.2f;
         float pounds = Mathf.Lerp(1.6f, 6.4f, skill) * strength * jitter;
         bool blanked = skill < 0.08f;
+        float scored = blanked ? 0f : Mathf.Round(pounds * 100f) * 0.01f;
+        bool largemouth = rng.NextDouble() < 0.58;
 
         return new TournamentStanding
         {
             Name = name,
-            Pounds = blanked ? 0f : Mathf.Round(pounds * 100f) * 0.01f,
-            Fish = blanked ? 0 : 1
+            Pounds = scored,
+            Fish = blanked ? 0 : 1,
+            LunkerLargemouth = !blanked && largemouth ? scored : 0f,
+            LunkerSmallmouth = !blanked && !largemouth ? scored : 0f
         };
+    }
+
+    /// <summary>
+    /// Splits a generated bag into individual fish so each angler can show a
+    /// largemouth lunker and a smallmouth lunker that still add up.
+    /// </summary>
+    static void SplitLunkers(System.Random rng, int fish, float pounds, out float lm, out float sm)
+    {
+        lm = 0f;
+        sm = 0f;
+        if (fish <= 0 || pounds <= 0.01f)
+            return;
+
+        float[] weights = new float[fish];
+        float sum = 0f;
+        float average = pounds / fish;
+        for (int i = 0; i < fish; i++)
+        {
+            weights[i] = average * (0.72f + (float)rng.NextDouble() * 0.56f);
+            sum += weights[i];
+        }
+
+        if (sum > 0.001f)
+        {
+            float scale = pounds / sum;
+            for (int i = 0; i < fish; i++)
+                weights[i] *= scale;
+        }
+
+        for (int i = 0; i < fish; i++)
+        {
+            float w = Mathf.Round(weights[i] * 100f) * 0.01f;
+            if (rng.NextDouble() < 0.58)
+                lm = Mathf.Max(lm, w);
+            else
+                sm = Mathf.Max(sm, w);
+        }
+    }
+
+    /// <summary>
+    /// Marks the heaviest largemouth and smallmouth. The player wins a true tie.
+    /// </summary>
+    public static void AwardLunkers(List<TournamentStanding> standings)
+    {
+        if (standings == null || standings.Count == 0)
+            return;
+
+        int lm = -1;
+        int sm = -1;
+        float bestLm = 0.01f;
+        float bestSm = 0.01f;
+        for (int i = 0; i < standings.Count; i++)
+        {
+            TournamentStanding row = standings[i];
+            if (BetterLunker(row.LunkerLargemouth, row.IsPlayer, bestLm, lm >= 0 && standings[lm].IsPlayer))
+            {
+                bestLm = row.LunkerLargemouth;
+                lm = i;
+            }
+
+            if (BetterLunker(row.LunkerSmallmouth, row.IsPlayer, bestSm, sm >= 0 && standings[sm].IsPlayer))
+            {
+                bestSm = row.LunkerSmallmouth;
+                sm = i;
+            }
+        }
+
+        if (lm >= 0)
+        {
+            TournamentStanding row = standings[lm];
+            row.WonLunkerLargemouth = true;
+            standings[lm] = row;
+        }
+
+        if (sm >= 0)
+        {
+            TournamentStanding row = standings[sm];
+            row.WonLunkerSmallmouth = true;
+            standings[sm] = row;
+        }
+    }
+
+    static bool BetterLunker(float pounds, bool isPlayer, float best, bool bestIsPlayer)
+    {
+        if (pounds <= 0.01f)
+            return false;
+        if (pounds > best)
+            return true;
+        return Mathf.Abs(pounds - best) < 0.001f && isPlayer && !bestIsPlayer;
     }
 
     static string PickName(System.Random rng, int index, int size)

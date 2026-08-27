@@ -47,11 +47,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b8160c8e4decb497da0740e8881771d3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BoatMotor
-  maxSpeed: 12
+  maxSpeed: 18
   acceleration: 9
   deceleration: 6
   turnSpeed: 85
   hullRadius: 1.35
+  beachClimb: 0.4
   waterSurface: {fileID: 0}
   seat: {fileID: 5470774964196859396}
   visualRoot: {fileID: 2516166098645720581}

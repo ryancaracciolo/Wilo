@@ -189,7 +189,10 @@ Shader "Wilo/Lake Water"
                 Light mainLight = GetMainLight();
                 half NdotL = saturate(dot(n, mainLight.direction));
                 half3 ambient = SampleSH(n);
-                half3 lit = albedo * (ambient + mainLight.color * (0.4 + 0.6 * NdotL));
+                // Keep the authored water hue. Multiplying blue water by warm
+                // sunlight (or a green equator bounce) turns the lake green in Play.
+                half sunLum = dot(mainLight.color, half3(0.2126, 0.7152, 0.0722));
+                half3 lit = albedo * (ambient + sunLum * (0.4 + 0.6 * NdotL));
 
                 half3 halfDir = SafeNormalize(mainLight.direction + viewDir);
                 half spec = pow(saturate(dot(n, halfDir)), exp2(10.0 * _Smoothness + 1.0)) * _Smoothness;

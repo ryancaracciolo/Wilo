@@ -23,6 +23,25 @@ public sealed class LakeHabitat
         in HabitatFeatures features,
         IReadOnlyList<FishSpecies> species)
     {
+        return Sample(geometricDepth, features, species, default, false);
+    }
+
+    public HabitatSample Sample(
+        float geometricDepth,
+        in HabitatFeatures features,
+        IReadOnlyList<FishSpecies> species,
+        in LakeConditions conditions)
+    {
+        return Sample(geometricDepth, features, species, conditions, true);
+    }
+
+    HabitatSample Sample(
+        float geometricDepth,
+        in HabitatFeatures features,
+        IReadOnlyList<FishSpecies> species,
+        in LakeConditions conditions,
+        bool useConditions)
+    {
         if (geometricDepth <= landDepthMeters)
             return HabitatSample.Empty;
         if (profile == null)
@@ -42,11 +61,10 @@ public sealed class LakeHabitat
         if (density < 0.0001f)
             return HabitatSample.Empty;
 
-        return new HabitatSample(
-            density,
-            profile.activity,
-            0f,
-            0f);
+        float act = useConditions
+            ? profile.EvaluateActivity(conditions)
+            : profile.activity;
+        return new HabitatSample(density, act, 0f, 0f);
     }
 
     public FishSpecies Pick(IReadOnlyList<FishSpecies> species, in HabitatFeatures features, float u01)

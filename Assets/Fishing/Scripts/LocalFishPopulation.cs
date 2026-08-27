@@ -20,7 +20,7 @@ public class LocalFishPopulation : MonoBehaviour
     float activeRadius = 72f;
     [SerializeField, Tooltip("Must be larger than active radius so edge cells do not flicker.")]
     float despawnRadius = 96f;
-    [SerializeField] int maxFish = 22;
+    [SerializeField] int maxFish = 24;
     [SerializeField] int maxFishPerCell = 3;
     [SerializeField] int maxCellActivationsPerUpdate = 6;
     [SerializeField] float updateInterval = 0.15f;
@@ -38,7 +38,7 @@ public class LocalFishPopulation : MonoBehaviour
     readonly Dictionary<LakeCellId, int> harvested = new Dictionary<LakeCellId, int>();
     readonly Dictionary<FishSpecies, Stack<FishAgent>> pools = new Dictionary<FishSpecies, Stack<FishAgent>>();
     readonly List<LakeCellId> scratchCells = new List<LakeCellId>();
-    readonly List<(LakeCellId id, float dist, float density)> candidates = new List<(LakeCellId, float, float)>();
+    readonly List<(LakeCellId id, float dist)> candidates = new List<(LakeCellId, float)>();
 
     Transform poolRoot;
     Vector3 lastOrigin;
@@ -173,11 +173,14 @@ public class LocalFishPopulation : MonoBehaviour
                 if (dist > activeRadius)
                     continue;
 
-                candidates.Add((id, dist, DensestInCell(id, origin.y)));
+                candidates.Add((id, dist));
             }
         }
 
-        candidates.Sort(CompareHabitat);
+        // Closest cells first. Density still decides how many fish a cell holds;
+        // ranking the whole ring by peak was letting far rock piles empty the
+        // nearby weed flats.
+        candidates.Sort(CompareDistance);
         int spawnBudget = maxCellActivationsPerUpdate;
         if (moved > cellSize)
             spawnBudget *= 3;
@@ -466,10 +469,11 @@ public class LocalFishPopulation : MonoBehaviour
         Vector3 best = PointInCell(id, origin.y, salt);
         float bestDensity = -1f;
 
-        // Let wood and rock compete on habitat value. Preferring wood outright
-        // parks smallmouth on a stray log instead of the rock they want.
+        // Wood, rock, and pads compete on habitat value so a stray log does not
+        // beat the rock a smallmouth wants, and a lily bed still gets used.
         ConsiderCover(id, origin, salt, center, CoverKind.Wood, ref best, ref bestDensity);
         ConsiderCover(id, origin, salt, center, CoverKind.Rock, ref best, ref bestDensity);
+        ConsiderCover(id, origin, salt, center, CoverKind.Vegetation, ref best, ref bestDensity);
         if (bestDensity > 0f)
             return best;
 
@@ -504,7 +508,7 @@ public class LocalFishPopulation : MonoBehaviour
             return;
 
         float ang = Hash01(Hash(id, salt + (int)kind * 271)) * Mathf.PI * 2f;
-        float r = 1f + Hash01(Hash(id, salt + (int)kind * 733)) * 3f;
+        float r = CoverSitMeters(kind, id, salt);
         for (int i = 0; i < 6; i++)
         {
             float a = ang + i * 1.047f;
@@ -523,8 +527,27 @@ public class LocalFishPopulation : MonoBehaviour
                 bestDensity = local.FishPerThousandSqMeters;
                 best = p;
             }
+        }
+    }
 
-            return;
+    float CoverSitMeters(CoverKind kind, LakeCellId id, int salt)
+    {
+        float u = Hash01(Hash(id, salt + (int)kind * 733));
+        HabitatProfile p = lake.Profile;
+        switch (kind)
+        {
+            case CoverKind.Wood:
+            {
+                float hug = p != null ? p.woodHugMeters : 2.2f;
+                return 0.35f + u * Mathf.Clamp(hug * 0.4f, 0.4f, 1f);
+            }
+            case CoverKind.Rock:
+            {
+                float reach = p != null ? p.rockReachMeters : 2.2f;
+                return 0.55f + u * Mathf.Clamp(reach * 0.65f, 0.8f, 1.8f);
+            }
+            default:
+                return 0.45f + u * 1.35f;
         }
     }
 
@@ -535,14 +558,6 @@ public class LocalFishPopulation : MonoBehaviour
         point.x = Mathf.Clamp(point.x, xMin + 0.5f, xMin + cellSize - 0.5f);
         point.z = Mathf.Clamp(point.z, zMin + 0.5f, zMin + cellSize - 0.5f);
         return point;
-    }
-
-    float DensestInCell(LakeCellId id, float y)
-    {
-        float mean;
-        float peak;
-        SampleCellDensity(id, y, out mean, out peak);
-        return peak;
     }
 
     void SampleCellDensity(LakeCellId id, float y, out float mean, out float peak)
@@ -560,6 +575,8 @@ public class LocalFishPopulation : MonoBehaviour
         if (lake.TryCoverInCell(center, half, CoverKind.Wood, out coverAt))
             AccumulateDensity(coverAt, ref sum, ref n, ref peak);
         if (lake.TryCoverInCell(center, half, CoverKind.Rock, out coverAt))
+            AccumulateDensity(coverAt, ref sum, ref n, ref peak);
+        if (lake.TryCoverInCell(center, half, CoverKind.Vegetation, out coverAt))
             AccumulateDensity(coverAt, ref sum, ref n, ref peak);
 
         mean = n > 0 ? sum / n : 0f;
@@ -591,10 +608,9 @@ public class LocalFishPopulation : MonoBehaviour
         return Mathf.Sqrt(dx * dx + dz * dz);
     }
 
-    static int CompareHabitat((LakeCellId id, float dist, float density) a, (LakeCellId id, float dist, float density) b)
+    static int CompareDistance((LakeCellId id, float dist) a, (LakeCellId id, float dist) b)
     {
-        int byDensity = b.density.CompareTo(a.density);
-        return byDensity != 0 ? byDensity : a.dist.CompareTo(b.dist);
+        return a.dist.CompareTo(b.dist);
     }
 
     void PushVisibility()

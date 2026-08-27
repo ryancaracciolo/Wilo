@@ -2,8 +2,9 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// Click-and-drag cast: left click or C to start, then steer with the mouse
-/// or arrows. Hold to reel; double-click to bring it all the way in.
+/// Click and hold to drop the cast mark under the cursor. C aims along the
+/// camera; steer with the arrows. Hold to reel; double-click to bring it all
+/// the way in.
 /// </summary>
 [DefaultExecutionOrder(-20)]
 public class PlayerFishing : MonoBehaviour
@@ -21,8 +22,8 @@ public class PlayerFishing : MonoBehaviour
 
     [Header("Cast")]
     [SerializeField] float minCastDistance = 4f;
-    [SerializeField] float maxCastDistance = 36f;
-    [SerializeField] float startCastDistance = 18f;
+    [SerializeField] float maxCastDistance = 54f;
+    [SerializeField] float startCastDistance = 27f;
     [SerializeField] float yawDegreesPerPixel = 0.22f;
     [SerializeField] float distancePerPixel = 0.12f;
     [SerializeField] float keyboardAimPixelsPerSecond = 520f;
@@ -91,8 +92,8 @@ public class PlayerFishing : MonoBehaviour
     Vector3 flyEnd;
     float flyTime;
     int aimStartFrame;
-    Vector2 aimMouseOrigin;
     Vector3 aimStartDir;
+    float aimStartDistance;
     Vector3 pendingLanding;
     bool pendingValid;
     float reelRippleTraveled;
@@ -274,17 +275,36 @@ public class PlayerFishing : MonoBehaviour
             return;
 
         aimStartFrame = Time.frameCount;
-        aimMouseOrigin = CurrentMousePosition();
         keyboardAimOffset = Vector2.zero;
         aimHeldByKeyboard = Keyboard.current != null &&
             Keyboard.current.cKey.isPressed &&
             (Mouse.current == null || !Mouse.current.leftButton.isPressed);
         aimStartDir = Flatten(cam.transform.forward);
+        aimStartDistance = startCastDistance;
+        if (!aimHeldByKeyboard)
+            SeedAimFromPointer();
         pendingValid = false;
         phase = Phase.Aiming;
         SetFishingLocked(true);
         EnsureMarkers();
         TickAim();
+    }
+
+    void SeedAimFromPointer()
+    {
+        Vector3 origin = transform.position;
+        origin.y = waterHeight;
+        if (!TryLandingFromPointer(origin, out Vector3 landing))
+        {
+            aimStartDistance = maxCastDistance;
+            return;
+        }
+
+        Vector3 delta = landing - origin;
+        delta.y = 0f;
+        float mag = delta.magnitude;
+        aimStartDir = mag > 0.15f ? delta / mag : aimStartDir;
+        aimStartDistance = mag > 0.15f ? mag : maxCastDistance;
     }
 
     void TickAim()
@@ -295,26 +315,16 @@ public class PlayerFishing : MonoBehaviour
             return;
         }
 
-        keyboardAimOffset += ArrowAim() * keyboardAimPixelsPerSecond * Time.deltaTime;
-        // The reticle tracks the pointer: move right and it swings right, push
-        // away and the cast lengthens. Arrows read the same way.
-        Vector2 aim = CurrentMousePosition() - aimMouseOrigin + keyboardAimOffset;
-        float yaw = Mathf.Clamp(aim.x * yawDegreesPerPixel, -maxYawOffset, maxYawOffset);
-        float distance = Mathf.Clamp(
-            startCastDistance + aim.y * distancePerPixel,
-            minCastDistance,
-            maxCastDistance);
-
         Vector3 origin = transform.position;
         origin.y = waterHeight;
-        Vector3 aimDir = Quaternion.AngleAxis(yaw, Vector3.up) * aimStartDir;
-        Vector3 livePos = origin + aimDir * distance;
-        livePos.y = waterHeight + 0.03f;
-        bool liveOnWater = IsWaterAt(livePos);
+        if (aimHeldByKeyboard)
+            TickKeyboardAim(origin);
+        else
+            TickPointerAim(origin);
 
-        pendingLanding = livePos;
-        pendingLanding.y = waterHeight;
-        pendingValid = liveOnWater;
+        Vector3 livePos = pendingLanding;
+        livePos.y = waterHeight + 0.03f;
+        pendingValid = IsWaterAt(livePos);
 
         SetLiveMarker(true, livePos);
 
@@ -331,6 +341,67 @@ public class PlayerFishing : MonoBehaviour
             ReleaseCast();
         else
             CancelAim();
+    }
+
+    void TickPointerAim(Vector3 origin)
+    {
+        if (TryLandingFromPointer(origin, out Vector3 landing))
+        {
+            pendingLanding = landing;
+            Vector3 delta = landing - origin;
+            delta.y = 0f;
+            float mag = delta.magnitude;
+            if (mag > 0.15f)
+            {
+                aimStartDir = delta / mag;
+                aimStartDistance = mag;
+            }
+
+            return;
+        }
+
+        Vector3 dir = Flatten(aimStartDir);
+        float distance = Mathf.Clamp(aimStartDistance, minCastDistance, maxCastDistance);
+        pendingLanding = origin + dir * distance;
+        pendingLanding.y = waterHeight;
+    }
+
+    bool TryLandingFromPointer(Vector3 origin, out Vector3 landing)
+    {
+        landing = default;
+        if (cam == null)
+            return false;
+
+        Ray ray = cam.ScreenPointToRay(CurrentMousePosition());
+        var water = new Plane(Vector3.up, new Vector3(0f, waterHeight, 0f));
+        if (!water.Raycast(ray, out float enter) || enter < 0.2f)
+            return false;
+
+        Vector3 hit = ray.GetPoint(enter);
+        Vector3 delta = hit - origin;
+        delta.y = 0f;
+        float mag = delta.magnitude;
+        if (mag < 0.15f)
+            return false;
+
+        float distance = Mathf.Clamp(mag, minCastDistance, maxCastDistance);
+        landing = origin + (delta / mag) * distance;
+        landing.y = waterHeight;
+        return true;
+    }
+
+    void TickKeyboardAim(Vector3 origin)
+    {
+        keyboardAimOffset += ArrowAim() * keyboardAimPixelsPerSecond * Time.deltaTime;
+        float yaw = Mathf.Clamp(keyboardAimOffset.x * yawDegreesPerPixel, -maxYawOffset, maxYawOffset);
+        float distance = Mathf.Clamp(
+            aimStartDistance + keyboardAimOffset.y * distancePerPixel,
+            minCastDistance,
+            maxCastDistance);
+
+        Vector3 aimDir = Quaternion.AngleAxis(yaw, Vector3.up) * aimStartDir;
+        pendingLanding = origin + aimDir * distance;
+        pendingLanding.y = waterHeight;
     }
 
     Vector2 CurrentMousePosition()
@@ -391,6 +462,7 @@ public class PlayerFishing : MonoBehaviour
             retrieveAllTheWay = false;
             reelRippleTraveled = 0f;
             phase = Phase.InWater;
+            SetBoatLocked(false);
         }
     }
 
@@ -490,6 +562,12 @@ public class PlayerFishing : MonoBehaviour
         hooked = fish;
         fishPopulation?.Detach(fish);
         fish.Hook(lureObject.transform, transform);
+        HudCues.Pulse(
+            "strike",
+            "!",
+            transform,
+            Vector3.up * (boatInteractor != null && boatInteractor.IsOnBoat ? 1.4f : 2.2f),
+            0.7f);
         WaterRipples.Emit(lureObject.transform.position, WaterRippleKind.Cast);
         if (lake != null && lake.Lure != null)
             lake.Lure.Clear();
@@ -498,6 +576,7 @@ public class PlayerFishing : MonoBehaviour
         Fight = fight;
         retrieveAllTheWay = false;
         phase = Phase.Fighting;
+        SetBoatLocked(true);
     }
 
     void TickFight()
@@ -719,18 +798,28 @@ public class PlayerFishing : MonoBehaviour
         SetFishingLocked(false);
     }
 
+    /// <summary>
+    /// Locks foot movement for the whole cast. Boat throttle only locks while
+    /// aiming or fighting, so the hull can still be moved with a lure in the water.
+    /// </summary>
     void SetFishingLocked(bool locked)
     {
+        SetBoatLocked(locked);
         if (boatInteractor != null && boatInteractor.IsOnBoat)
-        {
-            BoatMotor boat = GetComponentInParent<BoatMotor>();
-            if (boat != null)
-                boat.ControlsLocked = locked;
             return;
-        }
 
         if (motor != null)
             motor.enabled = !locked;
+    }
+
+    void SetBoatLocked(bool locked)
+    {
+        if (boatInteractor == null || !boatInteractor.IsOnBoat)
+            return;
+
+        BoatMotor boat = GetComponentInParent<BoatMotor>();
+        if (boat != null)
+            boat.ControlsLocked = locked;
     }
 
     void UpdateLine()
@@ -924,7 +1013,8 @@ public class PlayerFishing : MonoBehaviour
     float CurrentRetrieveSpeed()
     {
         LureDefinition lure = Equipped();
-        return retrieveSpeed * (lure != null ? lure.RetrieveScale : 1f);
+        float speed = retrieveSpeed * (lure != null ? lure.RetrieveScale : 1f);
+        return retrieveAllTheWay ? speed * 2f : speed;
     }
 
     /// <summary>Where the lure settles when nobody is reeling. Bottom rides keep their clearance.</summary>

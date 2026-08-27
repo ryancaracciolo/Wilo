@@ -9,11 +9,13 @@ using UnityEngine.InputSystem;
 public class BoatMotor : MonoBehaviour
 {
     [Header("Handling")]
-    [SerializeField] float maxSpeed = 12f;
+    [SerializeField] float maxSpeed = 18f;
     [SerializeField] float acceleration = 9f;
     [SerializeField] float deceleration = 6f;
     [SerializeField] float turnSpeed = 85f;
     [SerializeField] float hullRadius = 1.35f;
+    [Tooltip("The hull may run this far above the waterline onto sand. Steeper banks still stop it.")]
+    [SerializeField] float beachClimb = 0.4f;
 
     [Header("Lake")]
     [SerializeField] Transform waterSurface;
@@ -106,7 +108,13 @@ public class BoatMotor : MonoBehaviour
             return;
 
         Vector3 pos = transform.position;
-        pos.y = waterHeight + hullClearance + Mathf.Sin(Time.time * bobSpeed) * bobAmplitude;
+        float bob = Mathf.Sin(Time.time * bobSpeed) * bobAmplitude;
+        float waterY = waterHeight + hullClearance + bob;
+        float groundY = SampleGround(pos);
+        // Sit on wet sand when beached; stay on the water plane otherwise.
+        pos.y = groundY > waterHeight - 0.05f
+            ? Mathf.Max(waterY, groundY + hullClearance)
+            : waterY;
         transform.position = pos;
     }
 
@@ -131,16 +139,8 @@ public class BoatMotor : MonoBehaviour
 
     bool IsBlocked(Vector3 nextPosition)
     {
-        if (hasWaterHeight)
-        {
-            Terrain terrain = Terrain.activeTerrain;
-            if (terrain != null && terrain.terrainData != null)
-            {
-                float groundY = terrain.SampleHeight(nextPosition) + terrain.transform.position.y;
-                if (groundY > waterHeight - 0.08f)
-                    return true;
-            }
-        }
+        if (hasWaterHeight && SampleGround(nextPosition) > waterHeight + beachClimb)
+            return true;
 
         Vector3 origin = transform.position + Vector3.up * 0.4f;
         Vector3 destination = nextPosition + Vector3.up * 0.4f;
@@ -158,6 +158,9 @@ public class BoatMotor : MonoBehaviour
             return false;
         if (hit.collider.gameObject.layer == LayerMask.NameToLayer("Water"))
             return false;
+        // Underwater slope and wet sand are the beach, not a wall.
+        if (IsBeachHit(hit))
+            return false;
 
         Vector3 now = transform.position;
         now.y = 0f;
@@ -166,6 +169,27 @@ public class BoatMotor : MonoBehaviour
         Vector3 hitFlat = hit.point;
         hitFlat.y = 0f;
         return Vector3.Distance(nextFlat, hitFlat) < Vector3.Distance(now, hitFlat);
+    }
+
+    bool IsBeachHit(RaycastHit hit)
+    {
+        if (!hasWaterHeight)
+            return false;
+
+        bool terrainHit = hit.collider is TerrainCollider
+            || (Terrain.activeTerrain != null && hit.collider.gameObject == Terrain.activeTerrain.gameObject);
+        if (!terrainHit)
+            return false;
+
+        return SampleGround(hit.point) <= waterHeight + beachClimb;
+    }
+
+    static float SampleGround(Vector3 worldPosition)
+    {
+        Terrain terrain = Terrain.activeTerrain;
+        if (terrain == null || terrain.terrainData == null)
+            return float.NegativeInfinity;
+        return terrain.SampleHeight(worldPosition) + terrain.transform.position.y;
     }
 
     void CacheWaterHeight()

@@ -128,7 +128,7 @@ public sealed class LakeCoverIndex
                     switch (p.Kind)
                     {
                         case CoverKind.Rock:
-                            rock += w;
+                            rock += w * RockBulk(p.Radius);
                             break;
                         case CoverKind.Wood:
                             wood += w;
@@ -141,9 +141,19 @@ public sealed class LakeCoverIndex
             }
         }
 
-        rock = Mathf.Clamp01(rock);
+        // Boulders read above 1 so a pile or a big rock holds more fish than a cobble.
+        rock = Mathf.Min(rock, 1.45f);
         wood = Mathf.Clamp01(wood);
         veg = Mathf.Min(veg, 16f);
+    }
+
+    /// <summary>
+    /// Sitting on a cobble (~0.8 m) is about 0.52; a 10 m boulder is about 1.28.
+    /// Radius only used to change how far the falloff reaches without this.
+    /// </summary>
+    public static float RockBulk(float radius)
+    {
+        return Mathf.Lerp(0.52f, 1.28f, Mathf.InverseLerp(0.8f, 10f, radius));
     }
 
     /// <summary>

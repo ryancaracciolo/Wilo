@@ -16,10 +16,13 @@ MonoBehaviour:
   DisplayName: Topwater
   Hint: Never sinks. Loud on a calm surface at first and last light.
   Color: {r: 0.9, g: 0.42, b: 0.36, a: 1}
+  Icon: {fileID: 21300000, guid: 88639d41f57964b519a1a9c1af6decda, type: 3}
   Kind: 4
   SinkSpeed: 0
   Ride: 3
+  RetrieveScale: 1
   RideDepthFeet: 0
   HopFeet: 0
-  DrawDistance: 6.5
+  DrawDistance: 7.5
   WorksAtRest: 0.5
+  LowLightBias: 1

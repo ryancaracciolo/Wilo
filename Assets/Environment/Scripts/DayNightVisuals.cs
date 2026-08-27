@@ -35,8 +35,12 @@ public class DayNightVisuals : MonoBehaviour
     [SerializeField] Color dayColor = new Color(1f, 0.96f, 0.88f);
     [SerializeField] Color dawnColor = new Color(1f, 0.62f, 0.38f);
     [SerializeField] Color duskColor = new Color(1f, 0.42f, 0.24f);
-    [Tooltip("Fraction of the day spent easing in and out of full daylight.")]
+    [Tooltip("Fraction of the visual day spent easing in and out of full daylight.")]
     [SerializeField, Range(0.05f, 0.4f)] float twilightFraction = 0.2f;
+    [Tooltip("Extra hours of light before dawn and after dusk, so 5–7 AM and 6–8 PM stay readable.")]
+    [SerializeField, Min(0f)] float visualTwilightHours = 1.25f;
+    [Tooltip("How bright the visual day is at its edges. 0 is as dark as night.")]
+    [SerializeField, Range(0f, 1f)] float twilightFloor = 0.38f;
 
     [Header("Moon")]
     [SerializeField] float moonIntensity = 0.12f;
@@ -55,7 +59,7 @@ public class DayNightVisuals : MonoBehaviour
 
     [Header("Ambient")]
     [SerializeField] Color daySky = new Color(0.55f, 0.72f, 0.85f);
-    [SerializeField] Color dayEquator = new Color(0.48f, 0.58f, 0.48f);
+    [SerializeField] Color dayEquator = new Color(0.50f, 0.64f, 0.70f);
     [SerializeField] Color dayGroundAmbient = new Color(0.22f, 0.2f, 0.16f);
     [SerializeField] Color nightSky = new Color(0.06f, 0.08f, 0.14f);
     [SerializeField] Color nightEquator = new Color(0.08f, 0.1f, 0.12f);
@@ -79,29 +83,29 @@ public class DayNightVisuals : MonoBehaviour
         new SeasonLook
         {
             label = "Spring",
-            lightTint = new Color(0.98f, 1f, 0.96f),
-            waterTint = new Color(0.94f, 1f, 0.98f),
+            lightTint = new Color(0.98f, 0.99f, 1f),
+            waterTint = new Color(0.97f, 0.99f, 1f),
             fogScale = 1.25f
         },
         new SeasonLook
         {
             label = "Summer",
-            lightTint = new Color(1f, 0.99f, 0.92f),
+            lightTint = new Color(1f, 0.99f, 0.96f),
             waterTint = new Color(1f, 1f, 1f),
             fogScale = 0.8f
         },
         new SeasonLook
         {
             label = "Fall",
-            lightTint = new Color(1f, 0.92f, 0.78f),
-            waterTint = new Color(1f, 0.94f, 0.82f),
+            lightTint = new Color(1f, 0.96f, 0.88f),
+            waterTint = new Color(0.98f, 0.97f, 0.96f),
             fogScale = 1.35f
         },
         new SeasonLook
         {
             label = "Winter",
             lightTint = new Color(0.86f, 0.92f, 1f),
-            waterTint = new Color(0.82f, 0.9f, 0.96f),
+            waterTint = new Color(0.88f, 0.94f, 1f),
             fogScale = 1.9f
         }
     };
@@ -160,10 +164,14 @@ public class DayNightVisuals : MonoBehaviour
         float hour = conditions != null ? conditions.Hour : GameCalendar.SolarNoonHour;
         float dawn = conditions != null ? conditions.DawnHour : 6f;
         float dusk = conditions != null ? conditions.DuskHour : 19f;
+        float pad = Mathf.Max(0f, visualTwilightHours);
+        float visualDawn = dawn - pad;
+        float visualDusk = dusk + pad;
 
-        float span = Mathf.Max(0.5f, dusk - dawn);
-        float u = (hour - dawn) / span;
+        float span = Mathf.Max(0.5f, visualDusk - visualDawn);
+        float u = (hour - visualDawn) / span;
         float look = u > 0f && u < 1f ? DayCurve(u) : 0f;
+        look = Mathf.Max(look, ShoulderLook(hour));
         SeasonLook season = BlendSeason();
 
         if (u > 0f && u < 1f)
@@ -174,12 +182,21 @@ public class DayNightVisuals : MonoBehaviour
             sun.intensity = Mathf.Lerp(moonIntensity, dayIntensity, look);
             sun.shadowStrength = Mathf.Lerp(0.2f, 1f, look);
         }
+        else if (look > 0.04f)
+        {
+            bool morning = hour < GameCalendar.SolarNoonHour;
+            float elevation = Mathf.Lerp(10f, 22f, look);
+            sun.transform.rotation = Quaternion.Euler(elevation, azimuth, 0f);
+            sun.color = Tint(morning ? dawnColor : duskColor, season.lightTint);
+            sun.intensity = Mathf.Lerp(moonIntensity, dayIntensity, look);
+            sun.shadowStrength = Mathf.Lerp(0.2f, 0.7f, look);
+        }
         else
         {
             float nightSpan = Mathf.Max(0.5f, 24f - span);
-            float nightU = hour < dawn
-                ? (hour + 24f - dusk) / nightSpan
-                : (hour - dusk) / nightSpan;
+            float nightU = hour < visualDawn
+                ? (hour + 24f - visualDusk) / nightSpan
+                : (hour - visualDusk) / nightSpan;
             float elevation = Mathf.Sin(Mathf.Clamp01(nightU) * Mathf.PI) * moonElevation;
             sun.transform.rotation = Quaternion.Euler(Mathf.Max(8f, elevation), azimuth + 180f, 0f);
             sun.color = Tint(moonColor, season.lightTint);
@@ -233,11 +250,30 @@ public class DayNightVisuals : MonoBehaviour
     float DayCurve(float u)
     {
         float edge = twilightFraction;
+        float floor = twilightFloor;
         if (u < edge)
-            return Smooth(u / edge);
+            return Mathf.Lerp(floor, 1f, Smooth(u / edge));
         if (u > 1f - edge)
-            return Smooth((1f - u) / edge);
+            return Mathf.Lerp(floor, 1f, Smooth((1f - u) / edge));
         return 1f;
+    }
+
+    /// <summary>
+    /// Soft extra light in the 5–7 AM and 6–8 PM windows so those hours never
+    /// read as full night, even when seasonal dawn or dusk sits later.
+    /// </summary>
+    static float ShoulderLook(float hour)
+    {
+        float morning = GlowBand(hour, 4.5f, 7.5f, 0.22f, 0.48f);
+        float evening = GlowBand(hour, 17.5f, 20.5f, 0.48f, 0.22f);
+        return Mathf.Max(morning, evening);
+    }
+
+    static float GlowBand(float hour, float from, float to, float fromLook, float toLook)
+    {
+        if (hour < from || hour > to)
+            return 0f;
+        return Mathf.Lerp(fromLook, toLook, Smooth(Mathf.InverseLerp(from, to, hour)));
     }
 
     void CaptureSky()

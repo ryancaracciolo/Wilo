@@ -16,10 +16,13 @@ MonoBehaviour:
   DisplayName: Dropshot
   Hint: Finesse. Hovers just off the bottom for fish that will not chase.
   Color: {r: 0.55, g: 0.66, b: 0.78, a: 1}
+  Icon: {fileID: 21300000, guid: 6259539aa98154f30a1a55a7453acadb, type: 3}
   Kind: 5
   SinkSpeed: 1.1
   Ride: 1
+  RetrieveScale: 1
   RideDepthFeet: 2.5
   HopFeet: 0
-  DrawDistance: 2.2
+  DrawDistance: 6
   WorksAtRest: 0.95
+  LowLightBias: 0

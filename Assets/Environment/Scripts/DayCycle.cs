@@ -73,8 +73,8 @@ public class DayCycle : MonoBehaviour
     public event Action<string> Notice;
 
     /// <summary>
-    /// Raised once the day is ending but before the clock moves, so systems that
-    /// care about today can settle up. Tournaments weigh in here.
+    /// Raised once the day is ending but before the clock moves. An unweighed
+    /// tournament bag forfeits here; successful weigh-in already happened at camp.
     /// </summary>
     public event Action BeforeTurnIn;
 
@@ -98,6 +98,18 @@ public class DayCycle : MonoBehaviour
     public float WakeHour => conditions != null
         ? Mathf.Repeat(conditions.DawnHour + wakeAfterDawnHours, 24f)
         : 6.5f;
+
+    /// <summary>
+    /// Registered tournament mornings start early enough to boat from the cabin
+    /// to the camp. Other days follow dawn.
+    /// </summary>
+    public float WakeHourFor(int dayIndex)
+    {
+        float wake = WakeHour;
+        if (director != null && director.TryGetWakeHour(dayIndex, out float tournamentWake))
+            wake = Mathf.Min(wake, tournamentWake);
+        return wake;
+    }
 
     public bool PastWarning => SinceAnchor(CurrentHour) >= SinceAnchor(WarningHour);
     public bool NearDock => IsNearDock();
@@ -197,6 +209,7 @@ public class DayCycle : MonoBehaviour
 
     IEnumerator NightRoutine(bool forced, bool recap, int skipDays)
     {
+        ResolvePlayer();
         IsTurningIn = true;
         FadeRequested?.Invoke(1f, fadeDuration);
         yield return new WaitForSecondsRealtime(fadeDuration);
@@ -218,13 +231,13 @@ public class DayCycle : MonoBehaviour
         ReturnHome();
         if (skipDays > 0)
         {
-            // Dawn moves with the date, so the wake hour is read on the day landed on.
             conditions?.AdvanceDays(skipDays, -1f);
-            conditions?.SetTime(WakeHour);
+            conditions?.SetTime(WakeHourFor(conditions.DayIndex));
         }
         else
         {
-            conditions?.AdvanceToHour(WakeHour);
+            int landing = conditions != null ? conditions.DayIndex + 1 : 0;
+            conditions?.AdvanceToHour(WakeHourFor(landing));
         }
 
         // Sleeping is the save point, and the screen is already black for it.

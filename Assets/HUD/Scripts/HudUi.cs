@@ -97,6 +97,85 @@ public static class HudUi
         return row;
     }
 
+    public static VisualElement TabRow()
+    {
+        var row = Row();
+        row.AddToClassList("hud-tab-row");
+        return row;
+    }
+
+    public static Button Tab(string label, Action onClick, bool selected)
+    {
+        var tab = new Button { text = label };
+        tab.AddToClassList("hud-tab");
+        tab.EnableInClassList("hud-tab--on", selected);
+        tab.focusable = false;
+        tab.clicked += onClick;
+        return tab;
+    }
+
+    public static VisualElement LockLine(string text)
+    {
+        var row = Row();
+        row.AddToClassList("hud-lock-row");
+
+        var glyph = new VisualElement();
+        glyph.AddToClassList("hud-lock-glyph");
+        glyph.pickingMode = PickingMode.Ignore;
+        glyph.generateVisualContent += PaintLock;
+        row.Add(glyph);
+
+        Label label = Muted(text);
+        label.AddToClassList("hud-lock-label");
+        row.Add(label);
+        return row;
+    }
+
+    public static VisualElement Glyph(string className, Action<MeshGenerationContext> paint)
+    {
+        var glyph = new VisualElement();
+        glyph.AddToClassList(className);
+        glyph.pickingMode = PickingMode.Ignore;
+        glyph.generateVisualContent += paint;
+        return glyph;
+    }
+
+    /// <summary>Compact header readout such as money or reputation.</summary>
+    public static VisualElement StatChip(string tooltip, Action<MeshGenerationContext> glyph, out Label value)
+    {
+        var chip = new VisualElement();
+        chip.AddToClassList("hud-stat-chip");
+        chip.tooltip = tooltip;
+        chip.pickingMode = PickingMode.Ignore;
+        if (glyph != null)
+            chip.Add(Glyph("hud-stat-glyph", glyph));
+        value = new Label();
+        value.AddToClassList("hud-stat-value");
+        value.pickingMode = PickingMode.Ignore;
+        chip.Add(value);
+        return chip;
+    }
+
+    /// <summary>Labeled money/reputation tile used on the profile card.</summary>
+    public static VisualElement StatTile(string value, string caption, Action<MeshGenerationContext> glyph = null)
+    {
+        var tile = new VisualElement();
+        tile.AddToClassList("hud-profile-stat");
+
+        var valueRow = Row();
+        if (glyph != null)
+            valueRow.Add(Glyph("hud-profile-stat-glyph", glyph));
+        Label number = Title(value);
+        number.AddToClassList("hud-profile-stat-value");
+        valueRow.Add(number);
+        tile.Add(valueRow);
+
+        Label label = Muted(caption);
+        label.AddToClassList("hud-profile-stat-label");
+        tile.Add(label);
+        return tile;
+    }
+
     public static void PaintProfile(MeshGenerationContext ctx)
     {
         var r = ctx.visualElement.contentRect;
@@ -115,6 +194,33 @@ public static class HudUi
             new Vector2(c.x - s * 0.28f, c.y + s * 0.04f),
             new Vector2(c.x + s * 0.28f, c.y + s * 0.04f),
             new Vector2(c.x + s * 0.28f, c.y + s * 0.38f));
+        p.ClosePath();
+        p.Fill();
+    }
+
+    public static void PaintStar(MeshGenerationContext ctx)
+    {
+        var r = ctx.visualElement.contentRect;
+        var p = ctx.painter2D;
+        Vector2 c = r.center;
+        float s = Mathf.Min(r.width, r.height);
+        float outer = s * 0.42f;
+        float inner = s * 0.18f;
+
+        p.fillColor = HudTheme.Teal;
+        p.BeginPath();
+        for (int i = 0; i < 5; i++)
+        {
+            float outerA = -Mathf.PI * 0.5f + i * Mathf.PI * 0.4f;
+            float innerA = outerA + Mathf.PI * 0.2f;
+            Vector2 o = c + new Vector2(Mathf.Cos(outerA), Mathf.Sin(outerA)) * outer;
+            Vector2 n = c + new Vector2(Mathf.Cos(innerA), Mathf.Sin(innerA)) * inner;
+            if (i == 0)
+                p.MoveTo(o);
+            else
+                p.LineTo(o);
+            p.LineTo(n);
+        }
         p.ClosePath();
         p.Fill();
     }
@@ -168,6 +274,47 @@ public static class HudUi
             new Vector2(c.x - s * 0.34f, c.y + s * 0.02f),
             new Vector2(c.x - s * 0.12f, c.y + s * 0.02f));
         p.Stroke();
+    }
+
+    public static void PaintChevronDown(MeshGenerationContext ctx)
+    {
+        var r = ctx.visualElement.contentRect;
+        var p = ctx.painter2D;
+        Vector2 c = r.center;
+        float s = Mathf.Min(r.width, r.height);
+        float inset = s * 0.22f;
+
+        p.fillColor = HudTheme.Ink;
+        p.BeginPath();
+        p.MoveTo(new Vector2(c.x - s * 0.5f + inset, c.y - s * 0.12f));
+        p.LineTo(new Vector2(c.x + s * 0.5f - inset, c.y - s * 0.12f));
+        p.LineTo(new Vector2(c.x, c.y + s * 0.38f));
+        p.ClosePath();
+        p.Fill();
+    }
+
+    public static void PaintLock(MeshGenerationContext ctx)
+    {
+        var r = ctx.visualElement.contentRect;
+        var p = ctx.painter2D;
+        Vector2 c = r.center;
+        float s = Mathf.Min(r.width, r.height);
+
+        p.strokeColor = HudTheme.Muted;
+        p.lineWidth = Mathf.Max(1.6f, s * 0.12f);
+        p.lineCap = LineCap.Round;
+        p.BeginPath();
+        p.Arc(new Vector2(c.x, c.y - s * 0.04f), s * 0.2f, 200f, 340f);
+        p.Stroke();
+
+        p.fillColor = HudTheme.Muted;
+        p.BeginPath();
+        p.MoveTo(new Vector2(c.x - s * 0.26f, c.y - s * 0.04f));
+        p.LineTo(new Vector2(c.x + s * 0.26f, c.y - s * 0.04f));
+        p.LineTo(new Vector2(c.x + s * 0.26f, c.y + s * 0.34f));
+        p.LineTo(new Vector2(c.x - s * 0.26f, c.y + s * 0.34f));
+        p.ClosePath();
+        p.Fill();
     }
 
     public static void PaintWeather(MeshGenerationContext ctx, WeatherKind weather)

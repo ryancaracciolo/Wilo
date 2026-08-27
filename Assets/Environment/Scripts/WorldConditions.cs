@@ -24,7 +24,8 @@ public class WorldConditions : MonoBehaviour
     [SerializeField] float windMph = 4f;
 
     [Header("Clock")]
-    [SerializeField, Min(1f)] float realMinutesPerDay = 20f;
+    [Tooltip("Real minutes that pass for one in-game day. 40 is half the previous pace.")]
+    [SerializeField, Min(1f)] float realMinutesPerDay = 40f;
     [SerializeField, Range(0f, 24f)] float startHour = 7.5f;
     [SerializeField, Min(1)] int startYear = 1;
     [SerializeField, Range(0, GameCalendar.DaysPerYear - 1)] int startDayOfYear = 30;

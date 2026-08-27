@@ -13,14 +13,24 @@ MonoBehaviour:
   m_Name: Tournament_SundayClassic
   m_EditorClassIdentifier: Assembly-CSharp::TournamentDefinition
   Id: sunday-classic
-  DisplayName: Sunday Classic
+  DisplayName: Sunday Open
   Weekday: 0
-  StartHour: 6.5
+  Tier: 1
+  StartHour: 7
   EndHour: 16
+  WarningLeadHours: 0.5
   Format: 0
   EntryFee: 100
-  LatePenaltyPerHalfHour: 0.5
-  ForfeitAfterHours: 3
+  ReputationRequired: 40
+  ReputationAwards: 23000000160000000e000000
+  ReputationFinish: 6
+  LatePenaltyPounds: 0.5
+  LatePenaltyIntervalMinutes: 10
+  ForfeitAfterHours: 1
   FieldSize: 11
   FieldStrength: 1.1
-  Payouts: 580200002c010000960000004b000000
+  Payouts: 580200002c01000096000000
+  LunkerLargemouthPayout: 150
+  LunkerLargemouthReputation: 10
+  LunkerSmallmouthPayout: 150
+  LunkerSmallmouthReputation: 10

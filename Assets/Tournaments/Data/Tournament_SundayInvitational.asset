@@ -1,0 +1,36 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e98c96c5a97564490bedc0555105062d, type: 3}
+  m_Name: Tournament_SundayInvitational
+  m_EditorClassIdentifier: Assembly-CSharp::TournamentDefinition
+  Id: sunday-invitational
+  DisplayName: Sunday Invitational
+  Weekday: 0
+  Tier: 3
+  StartHour: 7
+  EndHour: 16
+  WarningLeadHours: 0.5
+  Format: 0
+  EntryFee: 400
+  ReputationRequired: 280
+  ReputationAwards: 50000000320000001e000000
+  ReputationFinish: 10
+  LatePenaltyPounds: 0.5
+  LatePenaltyIntervalMinutes: 10
+  ForfeitAfterHours: 1
+  FieldSize: 16
+  FieldStrength: 1.45
+  Payouts: d00700004c04000058020000
+  LunkerLargemouthPayout: 400
+  LunkerLargemouthReputation: 18
+  LunkerSmallmouthPayout: 400
+  LunkerSmallmouthReputation: 18

@@ -1,0 +1,36 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e98c96c5a97564490bedc0555105062d, type: 3}
+  m_Name: Tournament_SaturdayRegional
+  m_EditorClassIdentifier: Assembly-CSharp::TournamentDefinition
+  Id: saturday-regional
+  DisplayName: Saturday Regional
+  Weekday: 6
+  Tier: 2
+  StartHour: 7
+  EndHour: 16
+  WarningLeadHours: 0.5
+  Format: 0
+  EntryFee: 200
+  ReputationRequired: 120
+  ReputationAwards: 370000002300000016000000
+  ReputationFinish: 8
+  LatePenaltyPounds: 0.5
+  LatePenaltyIntervalMinutes: 10
+  ForfeitAfterHours: 1
+  FieldSize: 14
+  FieldStrength: 1.28
+  Payouts: 84030000f401000018010000
+  LunkerLargemouthPayout: 220
+  LunkerLargemouthReputation: 14
+  LunkerSmallmouthPayout: 220
+  LunkerSmallmouthReputation: 14

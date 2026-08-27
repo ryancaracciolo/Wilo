@@ -1,174 +1,116 @@
 using UnityEngine;
+using UnityEngine.Rendering;
 
 /// <summary>
-/// Runtime stand-in mesh for a lure until real models exist.
+/// Runtime low-poly lure. Meshes are built from the equipped bait kind so the
+/// in-water bait matches the tackle-box picture.
 /// </summary>
 public class LurePlaceholder : MonoBehaviour
 {
+    static Material sharedMat;
+
     Transform blade;
     float spinDegreesPerSecond;
+    Mesh bodyMesh;
+    Mesh bladeMesh;
+    Vector3[] restVerts;
+    Vector3[] wiggleVerts;
+    Vector3 lastPos;
+    bool wiggle;
+    bool haveLastPos;
 
     public void Apply(LureDefinition lure)
     {
         blade = null;
         spinDegreesPerSecond = 0f;
+        wiggle = false;
+        restVerts = null;
+        wiggleVerts = null;
+        haveLastPos = false;
         ClearChildren();
+        ReleaseMeshes();
 
         Color color = lure != null ? lure.Color : new Color(0.7f, 0.22f, 0.2f);
         LureKind kind = lure != null ? lure.Kind : LureKind.Worm;
-        switch (kind)
+        LureMeshBuilder.Result built = LureMeshBuilder.Build(kind, color);
+        bodyMesh = built.Body;
+        AddPart("Body", bodyMesh, Vector3.zero, Quaternion.identity);
+
+        if (kind == LureKind.Worm)
         {
-            case LureKind.Spinnerbait:
-                BuildSpinner(color);
-                break;
-            case LureKind.Jig:
-                BuildJig(color);
-                break;
-            case LureKind.Crankbait:
-                BuildCrankbait(color);
-                break;
-            case LureKind.Topwater:
-                BuildTopwater(color);
-                break;
-            case LureKind.Dropshot:
-                BuildDropshot(color);
-                break;
-            default:
-                BuildWorm(color);
-                break;
+            wiggle = true;
+            restVerts = bodyMesh.vertices;
+            wiggleVerts = new Vector3[restVerts.Length];
+        }
+
+        if (built.Blade != null)
+        {
+            bladeMesh = built.Blade;
+            var pivot = new GameObject("Blade");
+            pivot.transform.SetParent(transform, false);
+            pivot.transform.localPosition = built.BladeLocalPosition;
+            blade = pivot.transform;
+            spinDegreesPerSecond = built.BladeSpinDegreesPerSecond;
+            AddPart("Blade", bladeMesh, Vector3.zero, Quaternion.identity).transform.SetParent(blade, false);
         }
     }
 
     void Update()
     {
         if (blade != null)
-            blade.Rotate(spinDegreesPerSecond * Time.deltaTime, 0f, 0f, Space.Self);
+            blade.Rotate(0f, 0f, spinDegreesPerSecond * Time.deltaTime, Space.Self);
+
+        if (wiggle && bodyMesh != null && restVerts != null)
+            TickWiggle();
     }
 
-    void BuildWorm(Color color)
+    void TickWiggle()
     {
-        AddPart(PrimitiveType.Sphere, Vector3.zero, new Vector3(0.1f, 0.1f, 0.38f), Quaternion.identity, color);
-        AddPart(
-            PrimitiveType.Sphere,
-            new Vector3(0f, 0.01f, 0.14f),
-            new Vector3(0.08f, 0.08f, 0.16f),
-            Quaternion.identity,
-            Color.Lerp(color, Color.black, 0.12f));
+        float speed = 0f;
+        if (haveLastPos && Time.deltaTime > 0.0001f)
+            speed = Vector3.Distance(transform.position, lastPos) / Time.deltaTime;
+        lastPos = transform.position;
+        haveLastPos = true;
+
+        float motion = Mathf.Clamp01(speed / 1.8f);
+        float t = Time.time * 9f;
+        for (int i = 0; i < restVerts.Length; i++)
+        {
+            Vector3 v = restVerts[i];
+            float u = Mathf.Clamp(v.z / 0.20f, -1f, 1f);
+            float ends = u * u;
+            float wave = Mathf.Sin(t + u * 2.4f);
+            v.y += wave * 0.026f * ends * Mathf.Lerp(0.12f, 1f, motion);
+            v.x += Mathf.Sin(t * 0.65f + u * 1.7f) * 0.012f * ends * motion;
+            wiggleVerts[i] = v;
+        }
+
+        bodyMesh.vertices = wiggleVerts;
+        bodyMesh.RecalculateNormals();
+        bodyMesh.RecalculateBounds();
     }
 
-    void BuildSpinner(Color color)
+    void OnDestroy()
     {
-        Color metal = new Color(0.86f, 0.84f, 0.72f);
-        AddPart(PrimitiveType.Sphere, Vector3.zero, Vector3.one * 0.16f, Quaternion.identity, color);
-        AddPart(
-            PrimitiveType.Cube,
-            new Vector3(0.1f, 0f, 0f),
-            new Vector3(0.14f, 0.018f, 0.018f),
-            Quaternion.identity,
-            metal);
-
-        var pivot = new GameObject("Blade");
-        pivot.transform.SetParent(transform, false);
-        pivot.transform.localPosition = new Vector3(0.18f, 0f, 0f);
-        blade = pivot.transform;
-        spinDegreesPerSecond = 720f;
-
-        var disc = AddPart(
-            PrimitiveType.Cylinder,
-            Vector3.zero,
-            new Vector3(0.11f, 0.007f, 0.045f),
-            Quaternion.Euler(0f, 0f, 90f),
-            metal);
-        disc.transform.SetParent(blade, false);
-        disc.transform.localPosition = Vector3.zero;
+        ReleaseMeshes();
     }
 
-    void BuildJig(Color color)
+    GameObject AddPart(string name, Mesh mesh, Vector3 localPos, Quaternion localRot)
     {
-        Color lead = Color.Lerp(color, new Color(0.22f, 0.21f, 0.2f), 0.62f);
-        AddPart(PrimitiveType.Sphere, Vector3.zero, Vector3.one * 0.18f, Quaternion.identity, lead);
-        AddPart(
-            PrimitiveType.Sphere,
-            new Vector3(0f, -0.1f, 0.02f),
-            new Vector3(0.14f, 0.22f, 0.14f),
-            Quaternion.identity,
-            color);
-    }
-
-    void BuildCrankbait(Color color)
-    {
-        Color lip = new Color(0.82f, 0.86f, 0.9f, 1f);
-        AddPart(PrimitiveType.Sphere, Vector3.zero, new Vector3(0.15f, 0.14f, 0.24f), Quaternion.identity, color);
-        AddPart(
-            PrimitiveType.Sphere,
-            new Vector3(0f, -0.01f, -0.14f),
-            new Vector3(0.09f, 0.09f, 0.1f),
-            Quaternion.identity,
-            Color.Lerp(color, Color.black, 0.2f));
-        AddPart(
-            PrimitiveType.Cube,
-            new Vector3(0f, -0.06f, 0.16f),
-            new Vector3(0.11f, 0.012f, 0.11f),
-            Quaternion.Euler(38f, 0f, 0f),
-            lip);
-    }
-
-    void BuildTopwater(Color color)
-    {
-        AddPart(PrimitiveType.Sphere, Vector3.zero, new Vector3(0.11f, 0.11f, 0.34f), Quaternion.identity, color);
-        AddPart(
-            PrimitiveType.Cylinder,
-            new Vector3(0f, 0f, 0.17f),
-            new Vector3(0.1f, 0.012f, 0.1f),
-            Quaternion.Euler(90f, 0f, 0f),
-            Color.Lerp(color, Color.white, 0.55f));
-        AddPart(
-            PrimitiveType.Sphere,
-            new Vector3(0f, 0.02f, -0.19f),
-            new Vector3(0.09f, 0.05f, 0.1f),
-            Quaternion.identity,
-            new Color(0.92f, 0.9f, 0.84f));
-    }
-
-    void BuildDropshot(Color color)
-    {
-        Color lead = new Color(0.32f, 0.31f, 0.3f);
-        AddPart(PrimitiveType.Sphere, new Vector3(0f, 0.13f, 0f), new Vector3(0.07f, 0.07f, 0.3f), Quaternion.identity, color);
-        AddPart(
-            PrimitiveType.Cube,
-            new Vector3(0f, 0.04f, 0f),
-            new Vector3(0.008f, 0.16f, 0.008f),
-            Quaternion.identity,
-            new Color(0.88f, 0.86f, 0.8f));
-        AddPart(
-            PrimitiveType.Sphere,
-            new Vector3(0f, -0.07f, 0f),
-            new Vector3(0.06f, 0.11f, 0.06f),
-            Quaternion.identity,
-            lead);
-    }
-
-    GameObject AddPart(PrimitiveType type, Vector3 localPos, Vector3 localScale, Quaternion localRot, Color color)
-    {
-        var part = GameObject.CreatePrimitive(type);
-        part.name = type.ToString();
+        var part = new GameObject(name);
         part.transform.SetParent(transform, false);
         part.transform.localPosition = localPos;
         part.transform.localRotation = localRot;
-        part.transform.localScale = localScale;
-        Object.DestroyImmediate(part.GetComponent<Collider>());
         int ignore = LayerMask.NameToLayer("Ignore Raycast");
         if (ignore >= 0)
             part.layer = ignore;
 
-        var renderer = part.GetComponent<MeshRenderer>();
-        renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-        var mat = new Material(FindLitShader());
-        if (mat.HasProperty("_BaseColor"))
-            mat.SetColor("_BaseColor", color);
-        if (mat.HasProperty("_Color"))
-            mat.SetColor("_Color", color);
-        renderer.sharedMaterial = mat;
+        var filter = part.AddComponent<MeshFilter>();
+        filter.sharedMesh = mesh;
+        var renderer = part.AddComponent<MeshRenderer>();
+        renderer.sharedMaterial = SharedMat();
+        renderer.shadowCastingMode = ShadowCastingMode.Off;
+        renderer.receiveShadows = false;
         return part;
     }
 
@@ -178,9 +120,42 @@ public class LurePlaceholder : MonoBehaviour
             DestroyImmediate(transform.GetChild(i).gameObject);
     }
 
-    static Shader FindLitShader()
+    void ReleaseMeshes()
     {
-        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
-        return shader != null ? shader : Shader.Find("Sprites/Default");
+        if (bodyMesh != null)
+        {
+            if (Application.isPlaying)
+                Destroy(bodyMesh);
+            else
+                DestroyImmediate(bodyMesh);
+            bodyMesh = null;
+        }
+
+        if (bladeMesh != null)
+        {
+            if (Application.isPlaying)
+                Destroy(bladeMesh);
+            else
+                DestroyImmediate(bladeMesh);
+            bladeMesh = null;
+        }
+    }
+
+    static Material SharedMat()
+    {
+        if (sharedMat != null)
+            return sharedMat;
+
+        Shader shader = Shader.Find("Wilo/Lure");
+        if (shader == null)
+            shader = Shader.Find("HS_LowPoly/VertexColor");
+        if (shader == null)
+            shader = Shader.Find("Universal Render Pipeline/Lit");
+        sharedMat = new Material(shader);
+        sharedMat.name = "LureVertexColor";
+        sharedMat.hideFlags = HideFlags.HideAndDontSave;
+        if (sharedMat.HasProperty("_BaseColor"))
+            sharedMat.SetColor("_BaseColor", Color.white);
+        return sharedMat;
     }
 }

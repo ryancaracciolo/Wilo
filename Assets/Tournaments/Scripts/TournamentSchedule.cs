@@ -47,7 +47,8 @@ public static class TournamentSchedule
 
     /// <summary>
     /// Fills <paramref name="into"/> with the next occurrences starting today,
-    /// nearest first. Today counts while its window has not closed.
+    /// nearest first. Several events may share a weekday; they all list. Today
+    /// counts while each event's start has not passed.
     /// </summary>
     public static void Upcoming(
         IReadOnlyList<TournamentDefinition> definitions,
@@ -59,18 +60,40 @@ public static class TournamentSchedule
         if (definitions == null || definitions.Count == 0 || count <= 0)
             return;
 
-        // Two weeks is enough headroom for any weekly schedule.
         for (int offset = 0; offset < 14 && into.Count < count; offset++)
         {
             int day = calendar.DayIndex + offset;
-            TournamentOccurrence occ = On(definitions, calendar, day);
-            if (!occ.IsValid)
-                continue;
-            if (offset == 0 && calendar.Hour >= occ.Definition.EndHour)
-                continue;
+            System.DayOfWeek weekday = calendar.WeekdayFor(day);
+            for (int i = 0; i < definitions.Count; i++)
+            {
+                TournamentDefinition d = definitions[i];
+                if (d == null || d.Weekday != weekday)
+                    continue;
+                if (offset == 0 && calendar.Hour >= d.StartHour)
+                    continue;
 
-            into.Add(occ);
+                into.Add(new TournamentOccurrence(d, day));
+            }
         }
+
+        into.Sort(CompareBoard);
+    }
+
+    static int CompareBoard(TournamentOccurrence a, TournamentOccurrence b)
+    {
+        int day = a.DayIndex.CompareTo(b.DayIndex);
+        if (day != 0)
+            return day;
+
+        TournamentTier tierA = a.Definition != null ? a.Definition.Tier : TournamentTier.Local;
+        TournamentTier tierB = b.Definition != null ? b.Definition.Tier : TournamentTier.Local;
+        int tier = tierA.CompareTo(tierB);
+        if (tier != 0)
+            return tier;
+
+        string nameA = a.Definition != null ? a.Definition.DisplayName : "";
+        string nameB = b.Definition != null ? b.Definition.DisplayName : "";
+        return string.CompareOrdinal(nameA, nameB);
     }
 
     /// <summary>"Sat · Aug 3 · 7:00 AM – 4:00 PM": the dated line for a schedule row.</summary>
@@ -110,6 +133,18 @@ public static class TournamentSchedule
             <= 0 => "This weekend",
             1 => "Next weekend",
             _ => $"In {weeks} weeks"
+        };
+    }
+
+    /// <summary>Past results group the same way the board does, looking backward.</summary>
+    public static string PastWeekLabel(GameCalendar calendar, int dayIndex)
+    {
+        int weeks = (WeekStart(calendar, calendar.DayIndex) - WeekStart(calendar, dayIndex)) / 7;
+        return weeks switch
+        {
+            <= 0 => "This weekend",
+            1 => "Last weekend",
+            _ => $"{weeks} weekends ago"
         };
     }
 

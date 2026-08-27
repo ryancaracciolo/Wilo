@@ -10,6 +10,7 @@ public class PlayerProgress : MonoBehaviour
     /// <summary>Blank until the player signs a tournament sheet. Never blank once set.</summary>
     [SerializeField] string displayName = "";
     [SerializeField] int money = 250;
+    [SerializeField] int reputation;
     [SerializeField] string bestSpecies = "Largemouth";
     [SerializeField] float bestBassPounds;
 
@@ -20,6 +21,7 @@ public class PlayerProgress : MonoBehaviour
     public string DisplayName => HasName ? displayName : "You";
     public bool HasName => !string.IsNullOrWhiteSpace(displayName);
     public int Money => money;
+    public int Reputation => reputation;
     public string BestSpecies => bestSpecies;
     public float BestBassPounds => bestBassPounds;
     public bool HasPersonalBest => bestBassPounds > 0.01f;
@@ -40,6 +42,7 @@ public class PlayerProgress : MonoBehaviour
         PlayerSave data = save.Player;
         displayName = data.displayName;
         money = data.money;
+        reputation = data.reputation;
         bestSpecies = data.bestSpecies;
         bestBassPounds = data.bestBassPounds;
 
@@ -58,6 +61,7 @@ public class PlayerProgress : MonoBehaviour
 
         save.displayName = displayName;
         save.money = money;
+        save.reputation = reputation;
         save.bestSpecies = bestSpecies;
         save.bestBassPounds = bestBassPounds;
         save.catches.Clear();
@@ -67,6 +71,14 @@ public class PlayerProgress : MonoBehaviour
     public void SetMoney(int value)
     {
         money = Mathf.Max(0, value);
+    }
+
+    /// <summary>Reputation only grows. It is never spent.</summary>
+    public void AddReputation(int delta)
+    {
+        if (delta <= 0)
+            return;
+        reputation += delta;
     }
 
     /// <summary>
@@ -107,6 +119,14 @@ public class PlayerProgress : MonoBehaviour
         if (record == null || record.Marked)
             return;
         record.Marked = true;
+        MarkedChanged?.Invoke();
+    }
+
+    public void UnmarkCatch(CatchRecord record)
+    {
+        if (record == null || !record.Marked)
+            return;
+        record.Marked = false;
         MarkedChanged?.Invoke();
     }
 

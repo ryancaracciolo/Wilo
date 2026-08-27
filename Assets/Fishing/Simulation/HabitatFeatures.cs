@@ -1,7 +1,8 @@
 /// <summary>
 /// Cheap snapshot of a lake point. Depth is gameplay feet (sonar).
-/// Rock / wood are 0-1 proximity. Vegetation is 0-1 bed quality from
-/// nearby pad count, not a single plant.
+/// Wood is 0-1 proximity. Rock is proximity × boulder bulk (cobble ~0.5,
+/// typical rock ~1, large boulder ~1.3, piles clamp at 1.45). Vegetation
+/// is bed quality from nearby pad count, not a single plant.
 /// </summary>
 public readonly struct HabitatFeatures
 {

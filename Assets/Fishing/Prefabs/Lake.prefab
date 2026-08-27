@@ -71,7 +71,7 @@ MonoBehaviour:
   cellSize: 24
   activeRadius: 72
   despawnRadius: 96
-  maxFish: 22
+  maxFish: 24
   maxFishPerCell: 3
   maxCellActivationsPerUpdate: 6
   updateInterval: 0.15

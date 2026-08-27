@@ -13,14 +13,24 @@ MonoBehaviour:
   m_Name: Tournament_SaturdayOpen
   m_EditorClassIdentifier: Assembly-CSharp::TournamentDefinition
   Id: saturday-open
-  DisplayName: Saturday Open
+  DisplayName: Saturday Club
   Weekday: 6
+  Tier: 0
   StartHour: 7
-  EndHour: 13
+  EndHour: 16
+  WarningLeadHours: 0.5
   Format: 0
   EntryFee: 0
-  LatePenaltyPerHalfHour: 0.25
-  ForfeitAfterHours: 3
-  FieldSize: 11
-  FieldStrength: 0.95
+  ReputationRequired: 0
+  ReputationAwards: 140000000c00000008000000
+  ReputationFinish: 4
+  LatePenaltyPounds: 0.5
+  LatePenaltyIntervalMinutes: 10
+  ForfeitAfterHours: 1
+  FieldSize: 8
+  FieldStrength: 0.85
   Payouts: 4b0000002800000014000000
+  LunkerLargemouthPayout: 25
+  LunkerLargemouthReputation: 6
+  LunkerSmallmouthPayout: 25
+  LunkerSmallmouthReputation: 6
