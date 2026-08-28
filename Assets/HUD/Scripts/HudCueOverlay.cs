@@ -9,8 +9,8 @@ using UnityEngine.UIElements;
 public class HudCueOverlay : VisualElement
 {
     const float ScreenPad = 56f;
-    const float ActionHeightStanding = 2.35f;
-    const float ActionHeightSeated = 1.8f;
+    const float ActionHeightStanding = 2.05f;
+    const float ActionHeightSeated = 1.55f;
     const float ActionStackPx = 38f;
 
     readonly Dictionary<string, Chip> chips = new Dictionary<string, Chip>(8);

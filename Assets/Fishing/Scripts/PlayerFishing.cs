@@ -33,7 +33,7 @@ public class PlayerFishing : MonoBehaviour
     [SerializeField] float retrieveLiftDistance = 1.65f;
     [SerializeField] float doubleClickWindow = 0.32f;
     [SerializeField] float arcHeight = 3.15f;
-    [SerializeField] Vector3 castOriginOffset = new Vector3(0f, 1.15f, 0.2f);
+    [SerializeField] Vector3 castOriginOffset = new Vector3(0f, 0.9f, 0.22f);
 
     /// <summary>
     /// How quickly a lure settles onto its ride depth once reeling starts. Fast

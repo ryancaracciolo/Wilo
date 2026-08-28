@@ -2,7 +2,7 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// Camera-relative walk motor for the placeholder fisherman.
+/// Camera-relative walk motor for the fisherman.
 /// Movement is Animal Crossing-like: WASD / left stick steer on the ground plane
 /// relative to the camera, and the body turns to face the walk direction.
 /// </summary>

@@ -472,7 +472,7 @@ public class FishAgent : MonoBehaviour
         if (angler == null)
             return;
 
-        Vector3 chest = angler.position + Vector3.up * 0.95f;
+        Vector3 chest = angler.position + Vector3.up * 0.78f;
         Vector3 holdSide = -Flatten(angler.right);
         Vector3 fwd = Flatten(angler.forward);
         if (holdSide.sqrMagnitude < 0.0001f)

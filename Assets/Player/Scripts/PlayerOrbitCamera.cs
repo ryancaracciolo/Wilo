@@ -10,7 +10,7 @@ public class PlayerOrbitCamera : MonoBehaviour
 {
     [Header("Target")]
     [SerializeField] Transform target;
-    [SerializeField] Vector3 pivotOffset = new Vector3(0f, 0.95f, 0f);
+    [SerializeField] Vector3 pivotOffset = new Vector3(0f, 0.78f, 0f);
     [Tooltip("Where the player should sit in the viewport. X 0.5 is centered; Y slightly under 0.5 keeps a standing figure in the middle of the frame.")]
     [SerializeField] Vector2 followViewport = new Vector2(0.5f, 0.45f);
 
