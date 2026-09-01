@@ -79,7 +79,7 @@ public class RockPainterWindow : EditorWindow
     public static void Open()
     {
         var window = GetWindow<RockPainterWindow>("Rock Painter");
-        window.minSize = new Vector2(340, 500);
+        window.minSize = new Vector2(340, 580);
         window.Show();
     }
 
@@ -193,6 +193,11 @@ public class RockPainterWindow : EditorWindow
         EditorGUILayout.LabelField("Rocks In Parent", count.ToString());
         if (lastPaintedCount > 0)
             EditorGUILayout.LabelField("Last Stroke", lastPaintedCount.ToString());
+
+        EditorGUILayout.Space(6);
+        TerrainAnchorEditorUtil.DrawFollowSection(
+            parent != null ? parent : GameObject.Find(ParentName)?.transform,
+            "rocks");
 
         using (new EditorGUI.DisabledScope(parent == null || count == 0))
         {
@@ -400,6 +405,7 @@ public class RockPainterWindow : EditorWindow
 
         instance.transform.SetPositionAndRotation(position, rotation);
         instance.transform.localScale = Vector3.one * scale;
+        TerrainAnchorEditorUtil.AddConfigured(instance, embed * scale, yaw, slopeAlign);
 
         existingPositions.Add(position);
     }
@@ -407,23 +413,7 @@ public class RockPainterWindow : EditorWindow
     int EraseAt(Vector3 point)
     {
         Transform container = parent != null ? parent : GameObject.Find(ParentName)?.transform;
-        if (container == null)
-            return 0;
-
-        float radiusSq = brushRadius * brushRadius;
-        int removed = 0;
-        for (int i = container.childCount - 1; i >= 0; i--)
-        {
-            Transform child = container.GetChild(i);
-            Vector3 delta = child.position - point;
-            delta.y = 0f;
-            if (delta.sqrMagnitude <= radiusSq)
-            {
-                Undo.DestroyObjectImmediate(child.gameObject);
-                removed++;
-            }
-        }
-
+        int removed = TerrainAnchorEditorUtil.EraseInRadius(container, point, brushRadius);
         if (removed > 0)
             CacheExistingPositions();
         return removed;
@@ -456,13 +446,8 @@ public class RockPainterWindow : EditorWindow
 
     void CacheExistingPositions()
     {
-        existingPositions.Clear();
         Transform container = parent != null ? parent : GameObject.Find(ParentName)?.transform;
-        if (container == null)
-            return;
-
-        for (int i = 0; i < container.childCount; i++)
-            existingPositions.Add(container.GetChild(i).position);
+        TerrainAnchorEditorUtil.CachePositions(container, existingPositions);
     }
 
     bool TryGetLakebedFromRay(Ray ray, out RaycastHit bed, out float waterY, out bool hitWater)
@@ -781,7 +766,7 @@ public class RockPainterWindow : EditorWindow
     int CountRocks()
     {
         Transform container = parent != null ? parent : GameObject.Find(ParentName)?.transform;
-        return container != null ? container.childCount : 0;
+        return TerrainAnchorEditorUtil.CountPainted(container);
     }
 
     static bool IsMossPrefab(GameObject prefab)

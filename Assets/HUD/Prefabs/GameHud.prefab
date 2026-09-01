@@ -80,7 +80,7 @@ MonoBehaviour:
   startHour: 7.5
   startYear: 1
   startDayOfYear: 30
-  startWeekday: 6
+  startWeekday: 5
   gameplayDepthScale: 0.4
 --- !u!114 &7401582758706921096
 MonoBehaviour:

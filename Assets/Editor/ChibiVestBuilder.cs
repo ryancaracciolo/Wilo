@@ -32,6 +32,12 @@ public static class ChibiVestBuilder
     static float SkinGap;
     static float Thickness;
     static float OpeningDeg;
+    static bool AddShoulders;
+    static float ShoulderFrontDeg;
+    static float ShoulderOverlap;
+    static float ShoulderPeakY;
+    static float ShoulderWidth;
+    static float ShoulderThickness;
     static int Columns;
     static int Rings;
     static Color ShellColor;
@@ -79,6 +85,12 @@ public static class ChibiVestBuilder
         SkinGap = settings.skinGap;
         Thickness = settings.thickness;
         OpeningDeg = settings.openingDeg;
+        AddShoulders = settings.addShoulders;
+        ShoulderFrontDeg = settings.shoulderFrontDeg;
+        ShoulderOverlap = settings.shoulderOverlap;
+        ShoulderPeakY = settings.shoulderPeakY;
+        ShoulderWidth = settings.shoulderWidth;
+        ShoulderThickness = settings.shoulderThickness;
         Columns = Mathf.Max(9, settings.columns);
         Rings = Mathf.Max(3, settings.rings);
         ShellColor = settings.shellColor;
@@ -100,7 +112,8 @@ public static class ChibiVestBuilder
             isTorso[i] = dominant && bone >= 0 && bone <= LastTorsoBone;
 
             // The chibi's spine only reaches the belly; above it the skin belongs to
-            // the neck and clavicles, so the shell needs those to climb the shoulders.
+            // the neck and clavicles. Arm bones are left out on purpose — sampling
+            // them pulls the straps through the upper arm.
             isSurface[i] = dominant && (bone <= NeckBone || bone == RightClavicle || bone == LeftClavicle);
         }
 
@@ -112,6 +125,11 @@ public static class ChibiVestBuilder
         pocketTris = new List<int>();
 
         BuildShell();
+        if (AddShoulders)
+        {
+            BuildShoulder(1f);
+            BuildShoulder(-1f);
+        }
         for (int i = 0; i < Patches.Length; i++)
         {
             AddPatch(Patches[i]);
@@ -283,6 +301,82 @@ public static class ChibiVestBuilder
         AddBand(rightEdge, Rings, OpeningNormal(ColumnDeg(Columns - 1), 1f), shellTris);
     }
 
+    /// <summary>
+    /// A strap that sits on the same surface as the vest, starting below the
+    /// collar so it reads as part of the shell, then climbing over the neck
+    /// side of the shoulder. Arm verts are not sampled, so the path cannot
+    /// jump out into the upper arm.
+    /// </summary>
+    static void BuildShoulder(float side)
+    {
+        float frontDeg = ShoulderFrontDeg * side;
+        float backDeg = (180f - ShoulderFrontDeg) * side;
+        float attachY = TopY(frontDeg);
+        float startY = Mathf.Lerp(HemY, attachY, ShoulderOverlap);
+
+        const int along = 10;
+        const int across = 4;
+        var outer = new Vector3[along, across];
+        var inner = new Vector3[along, across];
+
+        for (int i = 0; i < along; i++)
+        {
+            float t = (float)i / (along - 1);
+            float rise = Mathf.Sin(t * Mathf.PI);
+            float deg = Mathf.Lerp(frontDeg, backDeg, t);
+            float y = Mathf.Lerp(startY, ShoulderPeakY, rise);
+
+            // Wider on the vest so the root covers a real patch of shell;
+            // narrower over the top so it stays between neck and arm.
+            float halfDeg = Mathf.Lerp(14f, 6f, rise) * (ShoulderWidth / 0.022f);
+
+            // Thickness points out with the vest, then more upward at the peak
+            // so the strap sits on top of the shoulder instead of into the arm.
+            Vector3 outward = Vector3.Lerp(Direction(deg), Vector3.up, rise * 0.75f).normalized;
+
+            for (int j = 0; j < across; j++)
+            {
+                float sampleDeg = deg + side * Mathf.Lerp(-halfDeg, halfDeg, (float)j / (across - 1));
+                inner[i, j] = ShellPoint(y, sampleDeg, 0f) + Vector3.up * (0.004f * rise);
+                outer[i, j] = inner[i, j] + outward * ShoulderThickness;
+            }
+        }
+
+        AddGridN(outer, along, across, true, shellTris);
+        AddGridN(inner, along, across, false, shellTris);
+
+        var startCap = new Vector3[2, across];
+        var endCap = new Vector3[2, across];
+        for (int j = 0; j < across; j++)
+        {
+            startCap[0, j] = inner[0, j];
+            startCap[1, j] = outer[0, j];
+            endCap[0, j] = outer[along - 1, j];
+            endCap[1, j] = inner[along - 1, j];
+        }
+        AddBand(startCap, across, Direction(frontDeg), shellTris);
+        AddBand(endCap, across, Direction(backDeg), shellTris);
+
+        var neckEdge = new Vector3[2, along];
+        var armEdge = new Vector3[2, along];
+        for (int i = 0; i < along; i++)
+        {
+            neckEdge[0, i] = inner[i, 0];
+            neckEdge[1, i] = outer[i, 0];
+            armEdge[0, i] = outer[i, across - 1];
+            armEdge[1, i] = inner[i, across - 1];
+        }
+        AddBand(neckEdge, along, -Vector3.right * side, shellTris);
+        AddBand(armEdge, along, Vector3.right * side, shellTris);
+    }
+
+    static Vector3 ShellPoint(float y, float deg, float extra)
+    {
+        float r = TorsoReach(y, deg) + SkinGap + extra;
+        Vector3 d = Direction(deg);
+        return new Vector3(d.x * r, y, d.z * r);
+    }
+
     static void AddPatch(ChibiVestSettings.Pocket p)
     {
         const int Sides = 12;
@@ -353,21 +447,29 @@ public static class ChibiVestBuilder
 
     static void AddGrid(Vector3[,] g, bool facingOut)
     {
-        int start = verts.Count;
-        for (int i = 0; i < Rings; i++)
-            for (int j = 0; j < Columns; j++)
-                AddVertex(g[i, j], new Vector2((float)j / (Columns - 1), (float)i / (Rings - 1)));
+        AddGridN(g, Rings, Columns, facingOut, shellTris);
+    }
 
-        for (int i = 0; i < Rings - 1; i++)
-            for (int j = 0; j < Columns - 1; j++)
+    static void AddGridN(Vector3[,] g, int rows, int cols, bool facingOut, List<int> tris)
+    {
+        int start = verts.Count;
+        for (int i = 0; i < rows; i++)
+            for (int j = 0; j < cols; j++)
+                AddVertex(g[i, j], new Vector2((float)j / (cols - 1), (float)i / (rows - 1)));
+
+        for (int i = 0; i < rows - 1; i++)
+            for (int j = 0; j < cols - 1; j++)
             {
                 Vector3 mid = (g[i, j] + g[i, j + 1] + g[i + 1, j + 1] + g[i + 1, j]) * 0.25f;
-                Vector3 radial = new Vector3(mid.x, 0f, mid.z).normalized;
-                AddQuad(shellTris,
-                    start + i * Columns + j,
-                    start + i * Columns + j + 1,
-                    start + (i + 1) * Columns + j + 1,
-                    start + (i + 1) * Columns + j,
+                Vector3 radial = new Vector3(mid.x, 0f, mid.z);
+                if (radial.sqrMagnitude < 1e-8f)
+                    radial = Vector3.up;
+                radial.Normalize();
+                AddQuad(tris,
+                    start + i * cols + j,
+                    start + i * cols + j + 1,
+                    start + (i + 1) * cols + j + 1,
+                    start + (i + 1) * cols + j,
                     facingOut ? radial : -radial);
             }
     }
@@ -480,14 +582,19 @@ public static class ChibiVestBuilder
     /// </summary>
     static float TorsoReach(float y, float deg)
     {
+        return SurfaceReach(y, deg, isSurface);
+    }
+
+    static float SurfaceReach(float y, float deg, bool[] mask)
+    {
         Vector3 d = Direction(deg);
         float reach = 0f;
         for (int i = 0; i < bodyVerts.Length; i++)
         {
-            if (!isSurface[i])
+            if (!mask[i])
                 continue;
             Vector3 v = bodyVerts[i];
-            if (Mathf.Abs(v.y - y) > 0.010f)
+            if (Mathf.Abs(v.y - y) > 0.012f)
                 continue;
             float projection = v.x * d.x + v.z * d.z;
             if (projection > reach)

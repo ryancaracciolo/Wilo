@@ -11,9 +11,11 @@ public class LocalFileStore : ISaveStore
 {
     readonly string root;
 
-    public LocalFileStore(string folderName = "wilo")
+    public LocalFileStore(string folderName = "wilo", string slotId = null)
     {
         root = Path.Combine(Application.persistentDataPath, folderName);
+        if (!string.IsNullOrEmpty(slotId))
+            root = Path.Combine(root, "s", slotId);
     }
 
     /// <summary>Handy in a log line when someone needs to find their save.</summary>

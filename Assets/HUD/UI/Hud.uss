@@ -751,6 +751,22 @@
     color: rgb(255, 248, 236);
 }
 
+.hud-text-button:hover {
+    background-color: rgb(244, 226, 198);
+}
+
+.hud-text-button:active {
+    background-color: rgb(226, 198, 158);
+}
+
+.hud-text-button--primary:hover {
+    background-color: rgb(96, 174, 166);
+}
+
+.hud-text-button--primary:active {
+    background-color: rgb(54, 126, 120);
+}
+
 .hud-name-field {
     margin: 6px 0 2px 0;
 }
@@ -765,6 +781,16 @@
     color: rgb(76, 61, 47);
     font-size: 15px;
     -unity-font-style: bold;
+    -unity-text-align: middle-left;
+    align-items: center;
+    justify-content: center;
+}
+
+.hud-name-field #unity-text-input,
+.hud-name-field .unity-text-element {
+    flex-grow: 1;
+    height: 100%;
+    min-height: 22px;
     -unity-text-align: middle-left;
 }
 
@@ -1277,4 +1303,152 @@
     font-size: 11px;
     color: rgb(138, 116, 96);
     -unity-text-align: middle-center;
+}
+
+.hud-intro {
+    flex-direction: row;
+    align-items: stretch;
+}
+
+.hud-intro-card {
+    width: 460px;
+    max-width: 46%;
+    max-height: none;
+    margin: 28px 0 28px 28px;
+}
+
+.hud-intro-scroll {
+    flex-grow: 1;
+}
+
+.hud-intro-title {
+    font-size: 28px;
+    margin-bottom: 2px;
+}
+
+.hud-intro-stage {
+    flex-grow: 1;
+    justify-content: flex-end;
+    align-items: center;
+    padding-bottom: 22px;
+}
+
+.hud-intro-hint {
+    margin-bottom: 0;
+    opacity: 0.7;
+}
+
+.hud-intro-soon {
+    margin-top: 4px;
+    margin-bottom: 0;
+    color: rgb(176, 96, 72);
+}
+
+.hud-choice-row {
+    flex-wrap: wrap;
+    margin-right: -8px;
+}
+
+.hud-choice {
+    height: 34px;
+    margin: 0 8px 8px 0;
+    padding: 0 14px;
+    border-radius: 17px;
+    border-width: 2px;
+    border-color: rgb(212, 180, 131);
+    background-color: rgb(255, 248, 236);
+    color: rgb(76, 61, 47);
+    font-size: 13px;
+    -unity-font-style: bold;
+}
+
+.hud-choice--on {
+    background-color: rgb(78, 156, 148);
+    border-color: rgb(78, 156, 148);
+    color: rgb(255, 248, 236);
+}
+
+.hud-choice:hover {
+    background-color: rgb(244, 226, 198);
+}
+
+.hud-choice:active {
+    background-color: rgb(226, 198, 158);
+}
+
+.hud-choice--on:hover {
+    background-color: rgb(96, 174, 166);
+}
+
+.hud-choice--on:active {
+    background-color: rgb(54, 126, 120);
+}
+
+.hud-choice--locked {
+    opacity: 0.72;
+}
+
+.hud-swatch-block {
+    margin-top: 4px;
+}
+
+.hud-swatch-label {
+    margin-bottom: 4px;
+}
+
+.hud-swatch-row {
+    flex-wrap: wrap;
+}
+
+.hud-swatch {
+    width: 28px;
+    height: 28px;
+    margin: 0 6px 6px 0;
+    padding: 3px;
+    border-radius: 14px;
+    border-width: 2px;
+    border-color: rgb(212, 180, 131);
+    background-color: rgb(255, 248, 236);
+}
+
+.hud-swatch--on {
+    border-color: rgb(78, 156, 148);
+    background-color: rgb(78, 156, 148);
+}
+
+.hud-swatch-fill {
+    flex-grow: 1;
+    border-radius: 10px;
+}
+
+.hud-swatch > .unity-button__text {
+    display: none;
+}
+
+.hud-lake-slot {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 6px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background-color: rgb(255, 248, 236);
+}
+
+.hud-lake-slot-text {
+    flex-grow: 1;
+    margin-right: 10px;
+}
+
+.hud-lake-slot-name {
+    font-size: 16px;
+    margin-bottom: 0;
+}
+
+.hud-lake-slot .hud-muted {
+    margin-bottom: 0;
+}
+
+.hud-lake-slot > .hud-text-button {
+    margin-top: 0;
 }

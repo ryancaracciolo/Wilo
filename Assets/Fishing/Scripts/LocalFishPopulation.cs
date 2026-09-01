@@ -28,7 +28,7 @@ public class LocalFishPopulation : MonoBehaviour
     [SerializeField] float keepClearOfViewer = 3f;
     [SerializeField, Tooltip("1 = real inches. Higher reads from the boat. 2.3 is about 2× the first pass.")]
     float visualScaleMultiplier = 2.3f;
-    [SerializeField, Range(0.25f, 1.5f), Tooltip("1 = fade in gameplay meters (visual depth × scale). Lower hides fish sooner than the bed.")]
+    [SerializeField, Range(0.25f, 1.5f), Tooltip("1 = fade with the lakebed. Lower hides fish sooner than the bed.")]
     float visibilityScale = 1f;
     [SerializeField, Tooltip("Planar fade so distant bass do not read as a grid.")]
     float viewDistance = 48f;
@@ -618,9 +618,8 @@ public class LocalFishPopulation : MonoBehaviour
         if (lake == null)
             return;
 
-        float water = lake.Conditions != null ? lake.Conditions.WaterVisibility : 10.4f;
-        float gameplay = lake.Conditions != null ? lake.Conditions.GameplayDepthScale : 0.5f;
-        float vis = water * visibilityScale / Mathf.Max(0.2f, gameplay);
+        float water = lake.Conditions != null ? lake.Conditions.WaterVisibility : 13.72f;
+        float vis = water * visibilityScale;
         Shader.SetGlobalFloat("_WiloWaterY", lake.SurfaceY);
         Shader.SetGlobalFloat("_WiloFishVisibility", Mathf.Max(1f, vis));
         Shader.SetGlobalFloat("_WiloFishViewDistance", viewDistance);

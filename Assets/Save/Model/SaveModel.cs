@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UnityEngine;
 
 /// <summary>
 /// The save format. Plain data only: no MonoBehaviours, no ScriptableObject
@@ -46,7 +47,16 @@ public class PlayerSave
 
     /// <summary>Blank means the player has not signed a tournament sheet yet.</summary>
     public string displayName = "";
-    public int money;
+
+    /// <summary>Set when the first-run intro is finished. Older saves stay playable without it.</summary>
+    public bool introComplete;
+
+    /// <summary>Which lake the player chose at the cabin door. See LakeChoice.</summary>
+    public string selectedLake = "";
+
+    public AppearanceData appearance = new AppearanceData();
+
+    public int money = 250;
     public int reputation;
     public string bestSpecies = "";
     public float bestBassPounds;
@@ -65,6 +75,18 @@ public class ClockData
 
     /// <summary>DayOfWeek stored as int so renaming or reordering the enum cannot silently shift dates.</summary>
     public int epochWeekday;
+
+    public bool IsUnset => dayIndex == 0 && minutesInDay <= 0.01;
+
+    public static ClockData From(GameCalendar calendar)
+    {
+        return new ClockData
+        {
+            dayIndex = calendar.DayIndex,
+            minutesInDay = calendar.MinutesInDay,
+            epochWeekday = (int)calendar.EpochWeekday
+        };
+    }
 }
 
 [Serializable]
@@ -106,4 +128,35 @@ public class TournamentData
     public int activeDayIndex;
     public int bagLimit = 5;
     public List<CatchRecord> bag = new List<CatchRecord>();
+}
+
+/// <summary>Colors the intro writes and PlayerAppearance applies. Alpha 0 means "unset".</summary>
+[Serializable]
+public class AppearanceData
+{
+    public Color skin;
+    public Color hat;
+    public Color vest;
+    public Color pockets;
+
+    public bool HasColors => skin.a > 0.01f || hat.a > 0.01f || vest.a > 0.01f || pockets.a > 0.01f;
+}
+
+/// <summary>One playthrough on the porch list. The documents live under this id.</summary>
+[Serializable]
+public class LakeSlot
+{
+    public string id = "";
+    public string displayName = "";
+    public string lakeKey = LakeChoice.Willow;
+    public int dayIndex;
+    public long lastPlayed;
+    public AppearanceData appearance = new AppearanceData();
+}
+
+[Serializable]
+public class LakeSlotCatalog
+{
+    public List<LakeSlot> slots = new List<LakeSlot>();
+    public string lastSlotId = "";
 }

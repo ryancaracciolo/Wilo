@@ -31,6 +31,11 @@ public struct GameCalendar
     public const float MinutesPerDay = 1440f;
     public const float SolarNoonHour = 12.5f;
 
+    /// <summary>First morning on a new lake. Keep in sync with WorldConditions defaults.</summary>
+    public const int NewGameDayOfYear = 30;
+    public const float NewGameHour = 7.5f;
+    public const DayOfWeek NewGameWeekday = DayOfWeek.Friday;
+
     /// <summary>Day of year with the longest daylight. Sits mid-summer.</summary>
     const int MidsummerDay = 35;
     const float MeanDaylightHours = 12.5f;
@@ -114,6 +119,8 @@ public struct GameCalendar
             hour12 = 12;
         return $"{hour12}:{minute:00} {(hour24 < 12 ? "AM" : "PM")}";
     }
+
+    public static GameCalendar NewGame() => FromStart(1, NewGameDayOfYear, NewGameWeekday, NewGameHour);
 
     public static GameCalendar FromStart(int year, int dayOfYear, DayOfWeek weekday, float hour)
     {

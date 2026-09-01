@@ -80,6 +80,8 @@ public class GameHud : MonoBehaviour
             dayCycle = GetComponent<DayCycle>() ?? gameObject.AddComponent<DayCycle>();
         if (director == null)
             director = GetComponent<TournamentDirector>() ?? gameObject.AddComponent<TournamentDirector>();
+        if (GetComponent<HudCuePresenter>() == null)
+            gameObject.AddComponent<HudCuePresenter>();
     }
 
     void OnEnable()
@@ -204,7 +206,9 @@ public class GameHud : MonoBehaviour
             dayCycle.TurnIn(false);
     }
 
-    void LateUpdate()
+    // GameHud Update must stay early for input flags. Cue chips project through
+    // the orbit camera, so they tick after that LateUpdate (see HudCuePresenter).
+    internal void PresentCues()
     {
         if (!built)
             return;
@@ -767,7 +771,7 @@ public class GameHud : MonoBehaviour
         nameLabel.AddToClassList("hud-profile-name");
         identity.Add(nameLabel);
         identity.Add(HudUi.Muted(progress != null && progress.HasName
-            ? "Wilo Lake"
+            ? LakeChoice.DisplayName(SaveService.Instance != null ? SaveService.Instance.Player.selectedLake : LakeChoice.Willow)
             : "Needed on the tournament board"));
         hero.Add(identity);
 
@@ -2014,5 +2018,21 @@ public class GameHud : MonoBehaviour
         Board,
         Entered,
         Past
+    }
+}
+
+[DefaultExecutionOrder(50)]
+sealed class HudCuePresenter : MonoBehaviour
+{
+    GameHud hud;
+
+    void Awake()
+    {
+        hud = GetComponent<GameHud>();
+    }
+
+    void LateUpdate()
+    {
+        hud?.PresentCues();
     }
 }

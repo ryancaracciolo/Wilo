@@ -52,6 +52,25 @@ public class ChibiVestSettings : ScriptableObject
     [Tooltip("Half width of the gap down the front.")]
     [Range(0f, 60f)] public float openingDeg = 20f;
 
+    [Header("Shoulders")]
+    [Tooltip("Straps that go over the shoulders and join the front of the vest to the back.")]
+    public bool addShoulders = true;
+
+    [Tooltip("Where each strap meets the chest, in degrees from the front centre.")]
+    [Range(20f, 80f)] public float shoulderFrontDeg = 42f;
+
+    [Tooltip("How far down the vest the strap is rooted. Lower values overlap more of the shell.")]
+    [Range(0.4f, 1f)] public float shoulderOverlap = 0.68f;
+
+    [Tooltip("Height of the strap at the top of the shoulder, next to the neck.")]
+    [Range(0.15f, 0.22f)] public float shoulderPeakY = 0.186f;
+
+    [Tooltip("Width of the strap.")]
+    [Range(0.008f, 0.05f)] public float shoulderWidth = 0.022f;
+
+    [Tooltip("Thickness of the strap.")]
+    [Range(0.003f, 0.02f)] public float shoulderThickness = 0.007f;
+
     [Header("Resolution")]
     [Range(9, 49)] public int columns = 25;
     [Range(3, 12)] public int rings = 6;

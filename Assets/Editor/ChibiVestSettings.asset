@@ -12,28 +12,34 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b72f85dccbbdd4142b49636346788edf, type: 3}
   m_Name: ChibiVestSettings
   m_EditorClassIdentifier: Assembly-CSharp-Editor::ChibiVestSettings
-  hemY: 0.074
-  collarY: 0.178
-  armholeDrop: 0.046
-  skinGap: 0.002
-  thickness: 0.008
-  openingDeg: 20
+  hemY: 0.07
+  collarY: 0.162
+  armholeDrop: 0
+  skinGap: 0.00433
+  thickness: 0.0128
+  openingDeg: 0
+  addShoulders: 1
+  shoulderFrontDeg: 20
+  shoulderOverlap: 0.732
+  shoulderPeakY: 0.1964
+  shoulderWidth: 0.0324
+  shoulderThickness: 0.0087
   columns: 25
   rings: 6
   shellColor: {r: 0.322, g: 0.373, b: 0.235, a: 1}
   pocketColor: {r: 0.639, g: 0.545, b: 0.373, a: 1}
   pockets:
   - name: Pocket
-    centerDeg: 38
-    halfDeg: 15
+    centerDeg: 25
+    halfDeg: 16.5
     centerY: 0.104
     halfY: 0.014
-    lift: 0.008
-    inset: 0.8
+    lift: 0.0034
+    inset: 0.743
   - name: Flap
-    centerDeg: 38
+    centerDeg: 25
     halfDeg: 17
     centerY: 0.122
     halfY: 0.0045
-    lift: 0.011
-    inset: 0.86
+    lift: 0.0034
+    inset: 0.724

@@ -70,11 +70,15 @@ public static class HudUi
     /// The only place the player types. While it holds focus it raises
     /// HudInput.Typing so gameplay keys stand down, and Enter confirms.
     /// </summary>
-    public static TextField NameField(string value, int maxLength, Action submit)
+    public static TextField NameField(string value, int maxLength, Action submit, bool autoFocus = true)
     {
         var field = new TextField { value = value, maxLength = maxLength, isDelayed = false };
         field.AddToClassList("hud-name-field");
-        field.RegisterCallback<FocusInEvent>(_ => HudInput.Typing = true);
+        field.RegisterCallback<FocusInEvent>(_ =>
+        {
+            HudInput.Typing = true;
+            AlignNameCaret(field);
+        });
         field.RegisterCallback<FocusOutEvent>(_ => HudInput.Typing = false);
         field.RegisterCallback<DetachFromPanelEvent>(_ => HudInput.Typing = false);
         field.RegisterCallback<KeyDownEvent>(evt =>
@@ -85,9 +89,70 @@ public static class HudUi
             submit?.Invoke();
         });
 
+        // Empty caret sits on the first-line top unless the inner text box
+        // is stretched and middle-aligned the same way typed glyphs are.
+        field.schedule.Execute(() => AlignNameCaret(field));
+        field.RegisterValueChangedCallback(_ => AlignNameCaret(field));
+
         // The panel has to lay the field out before it can take focus.
-        field.schedule.Execute(() => field.Focus());
+        if (autoFocus)
+            field.schedule.Execute(() => field.Focus());
         return field;
+    }
+
+    static void AlignNameCaret(TextField field)
+    {
+        if (field == null)
+            return;
+
+        VisualElement input = field.Q(className: TextField.inputUssClassName);
+        if (input != null)
+        {
+            input.style.alignItems = Align.Center;
+            input.style.justifyContent = Justify.Center;
+            input.style.unityTextAlign = TextAnchor.MiddleLeft;
+        }
+
+        VisualElement text = field.Q(TextField.textInputUssName);
+        if (text == null)
+            text = field.Q<TextElement>();
+        if (text == null)
+            return;
+
+        text.style.flexGrow = 1;
+        text.style.height = Length.Percent(100);
+        text.style.minHeight = 22;
+        text.style.unityTextAlign = TextAnchor.MiddleLeft;
+        // Empty caret ignores middle-align and sits a few pixels high.
+        text.style.paddingTop = string.IsNullOrEmpty(field.value) ? 8 : 0;
+        text.style.paddingBottom = 0;
+    }
+
+    public static Button Choice(string label, Action onClick, bool selected, bool locked = false)
+    {
+        var button = new Button { text = label };
+        button.AddToClassList("hud-choice");
+        button.EnableInClassList("hud-choice--on", selected);
+        button.EnableInClassList("hud-choice--locked", locked);
+        button.focusable = false;
+        button.clicked += onClick;
+        return button;
+    }
+
+    public static Button Swatch(Color color, bool selected, Action onClick)
+    {
+        var button = new Button();
+        button.AddToClassList("hud-swatch");
+        button.EnableInClassList("hud-swatch--on", selected);
+        button.focusable = false;
+        button.clicked += onClick;
+
+        var fill = new VisualElement();
+        fill.AddToClassList("hud-swatch-fill");
+        fill.pickingMode = PickingMode.Ignore;
+        fill.style.backgroundColor = color;
+        button.Add(fill);
+        return button;
     }
 
     public static VisualElement Row()

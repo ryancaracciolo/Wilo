@@ -24,8 +24,9 @@ public class ChibiVestSettingsEditor : Editor
 
         EditorGUILayout.HelpBox(
             "Distances are in the chibi mesh's local space: the character stands 0.475 tall, " +
-            "hips at 0.077 and shoulders at 0.184. Rebuilding rewrites ChibiFishingVest.mesh " +
-            "and the vest on the Player prefab.",
+            "hips at 0.077 and shoulders at 0.184. Shoulder straps are a separate piece from " +
+            "the shell — use the Shoulders sliders to move them. Rebuilding rewrites " +
+            "ChibiFishingVest.mesh and the vest on the Player prefab.",
             MessageType.None);
     }
 }

@@ -10,7 +10,8 @@ using UnityEngine.Rendering;
 public class GrassPainterWindow : EditorWindow
 {
     const string PrefsPrefix = "Wilo.GrassPainter.";
-    const string ParentName = "WeedBeds";
+    const string ParentName = "Grass";
+    const string LegacyParentName = "WeedBeds";
     const string GrassFolder = "Assets/HS_LowPoly/ForestEssentials/Prefabs/Grass/";
     const string FernFolder = "Assets/HS_LowPoly/ForestEssentials/Prefabs/Ferns/";
 
@@ -75,7 +76,7 @@ public class GrassPainterWindow : EditorWindow
     public static void Open()
     {
         var window = GetWindow<GrassPainterWindow>("Grass Painter");
-        window.minSize = new Vector2(340, 520);
+        window.minSize = new Vector2(340, 580);
         window.Show();
     }
 
@@ -189,6 +190,11 @@ public class GrassPainterWindow : EditorWindow
         EditorGUILayout.LabelField("Plants In Parent", count.ToString());
         if (lastPaintedCount > 0)
             EditorGUILayout.LabelField("Last Stroke", lastPaintedCount.ToString());
+
+        EditorGUILayout.Space(6);
+        TerrainAnchorEditorUtil.DrawFollowSection(
+            FindExistingParent(),
+            "plants");
 
         using (new EditorGUI.DisabledScope(parent == null || count == 0))
         {
@@ -395,30 +401,15 @@ public class GrassPainterWindow : EditorWindow
 
         instance.transform.SetPositionAndRotation(position, rotation);
         instance.transform.localScale = Vector3.one * scale;
+        TerrainAnchorEditorUtil.AddConfigured(instance, embed * scale, yaw, slopeAlign);
 
         existingPositions.Add(position);
     }
 
     int EraseAt(Vector3 point)
     {
-        Transform container = parent != null ? parent : GameObject.Find(ParentName)?.transform;
-        if (container == null)
-            return 0;
-
-        float radiusSq = brushRadius * brushRadius;
-        int removed = 0;
-        for (int i = container.childCount - 1; i >= 0; i--)
-        {
-            Transform child = container.GetChild(i);
-            Vector3 delta = child.position - point;
-            delta.y = 0f;
-            if (delta.sqrMagnitude <= radiusSq)
-            {
-                Undo.DestroyObjectImmediate(child.gameObject);
-                removed++;
-            }
-        }
-
+        Transform container = FindExistingParent();
+        int removed = TerrainAnchorEditorUtil.EraseInRadius(container, point, brushRadius);
         if (removed > 0)
             CacheExistingPositions();
         return removed;
@@ -445,13 +436,8 @@ public class GrassPainterWindow : EditorWindow
 
     void CacheExistingPositions()
     {
-        existingPositions.Clear();
-        Transform container = parent != null ? parent : GameObject.Find(ParentName)?.transform;
-        if (container == null)
-            return;
-
-        for (int i = 0; i < container.childCount; i++)
-            existingPositions.Add(container.GetChild(i).position);
+        Transform container = FindExistingParent();
+        TerrainAnchorEditorUtil.CachePositions(container, existingPositions);
     }
 
     bool TryGetLakebedFromRay(Ray ray, out RaycastHit bed, out float waterY, out bool hitWater)
@@ -678,20 +664,34 @@ public class GrassPainterWindow : EditorWindow
         return 201.7f;
     }
 
-    Transform GetOrCreateParent(bool select)
+    Transform FindExistingParent()
     {
         if (parent != null)
             return parent;
 
         GameObject existing = GameObject.Find(ParentName);
+        if (existing == null)
+            existing = GameObject.Find(LegacyParentName);
+        if (existing != null)
+            parent = existing.transform;
+        return parent;
+    }
+
+    Transform GetOrCreateParent(bool select)
+    {
+        if (parent != null)
+            return parent;
+
+        Transform existing = FindExistingParent();
         if (existing != null)
         {
-            parent = existing.transform;
-            return parent;
+            if (select)
+                Selection.activeGameObject = existing.gameObject;
+            return existing;
         }
 
         var go = new GameObject(ParentName);
-        Undo.RegisterCreatedObjectUndo(go, "Create WeedBeds");
+        Undo.RegisterCreatedObjectUndo(go, "Create Grass");
         parent = go.transform;
         if (select)
             Selection.activeGameObject = go;
@@ -748,8 +748,8 @@ public class GrassPainterWindow : EditorWindow
 
     int CountWeed()
     {
-        Transform container = parent != null ? parent : GameObject.Find(ParentName)?.transform;
-        return container != null ? container.childCount : 0;
+        Transform container = FindExistingParent();
+        return TerrainAnchorEditorUtil.CountPainted(container);
     }
 
     int CountValidPrefabs()
@@ -766,7 +766,7 @@ public class GrassPainterWindow : EditorWindow
 
     void ClearWeed()
     {
-        Transform container = parent != null ? parent : GameObject.Find(ParentName)?.transform;
+        Transform container = FindExistingParent();
         if (container == null || container.childCount == 0)
             return;
 

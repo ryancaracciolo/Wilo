@@ -1,16 +1,17 @@
-// Stylized lake water for URP. Keeps shallows see-through and fades the
-// bottom out with depth so deep rocks disappear, like a real visibility cap.
+// Stylized lake water for URP. Shallows stay see-through (about 1 gameplay
+// foot) and the bed fades out by the hide-at depth (18 ft by default).
 Shader "Wilo/Lake Water"
 {
     Properties
     {
         [Header(Color)]
-        [MainColor] _ShallowColor("Shallow Color", Color) = (0.15, 0.45, 0.54, 0.70)
-        _DeepColor("Deep Color", Color) = (0.12, 0.40, 0.50, 0.95)
+        [MainColor] _ShallowColor("Shallow Color", Color) = (0.15, 0.45, 0.54, 0.5)
+        _DeepColor("Deep Color", Color) = (0.12, 0.40, 0.50, 1)
 
         [Header(Visibility)]
-        _Visibility("Visibility Distance", Range(2, 40)) = 18
-        _DepthSoftness("Depth Softness", Range(0.4, 3)) = 1.55
+        _Visibility("Hide Bottom At (ft)", Range(2, 40)) = 18
+        _ClearFeet("Clear Through (ft)", Range(0, 8)) = 1
+        _DepthSoftness("Depth Softness", Range(0.4, 3)) = 1.25
 
         [Header(Ripples)]
         _RippleFoam("Ripple Foam", Color) = (0.82, 0.93, 0.95, 1)
@@ -54,6 +55,7 @@ Shader "Wilo/Lake Water"
                 half4 _ShallowColor;
                 half4 _DeepColor;
                 float _Visibility;
+                float _ClearFeet;
                 float _DepthSoftness;
                 half _Smoothness;
                 half _FresnelPower;
@@ -67,6 +69,7 @@ Shader "Wilo/Lake Water"
             float4 _WiloRippleParams[WILO_MAX_RIPPLES];
             float _WiloRippleCount;
             float _WiloRippleTime;
+            float _WiloGameplayDepthScale;
 
             struct Attributes
             {
@@ -174,11 +177,17 @@ Shader "Wilo/Lake Water"
 
                 float3 viewDir = GetWorldSpaceNormalizeViewDir(IN.positionWS);
                 float verticalDepth = viewThickness * max(abs(viewDir.y), 0.2);
-                float fade = saturate(verticalDepth / max(_Visibility, 0.01));
+                // Same feet the sonar shows. 1 ft stays see-through; hide-at
+                // (default 18) is solid water with no bed showing through.
+                float scale = _WiloGameplayDepthScale > 0.05 ? _WiloGameplayDepthScale : 0.4;
+                float depthFeet = verticalDepth * scale * 3.28084;
+                float clearFeet = max(_ClearFeet, 0.0);
+                float hideFeet = max(_Visibility, clearFeet + 0.01);
+                float fade = saturate((depthFeet - clearFeet) / (hideFeet - clearFeet));
                 fade = pow(fade, _DepthSoftness);
 
                 half3 albedo = lerp(_ShallowColor.rgb, _DeepColor.rgb, fade);
-                half alpha = lerp(_ShallowColor.a, _DeepColor.a, fade);
+                half alpha = lerp(_ShallowColor.a, 1.0h, fade);
 
                 float foam;
                 float2 slope;

@@ -26,10 +26,10 @@ public class WorldConditions : MonoBehaviour
     [Header("Clock")]
     [Tooltip("Real minutes that pass for one in-game day. 40 is half the previous pace.")]
     [SerializeField, Min(1f)] float realMinutesPerDay = 40f;
-    [SerializeField, Range(0f, 24f)] float startHour = 7.5f;
+    [SerializeField, Range(0f, 24f)] float startHour = GameCalendar.NewGameHour;
     [SerializeField, Min(1)] int startYear = 1;
-    [SerializeField, Range(0, GameCalendar.DaysPerYear - 1)] int startDayOfYear = 30;
-    [SerializeField] DayOfWeek startWeekday = DayOfWeek.Saturday;
+    [SerializeField, Range(0, GameCalendar.DaysPerYear - 1)] int startDayOfYear = GameCalendar.NewGameDayOfYear;
+    [SerializeField] DayOfWeek startWeekday = GameCalendar.NewGameWeekday;
 
     [Header("Lake")]
     [SerializeField, Range(0.2f, 1f), Tooltip("Multiplies geometric depth for sonar and fishing. 0.4 makes a 20 ft hole read as 8 ft. Terrain stays put.")]
@@ -80,7 +80,7 @@ public class WorldConditions : MonoBehaviour
     readonly List<StructureDome> structure = new List<StructureDome>();
     float waterHeight;
     bool hasWaterHeight;
-    float waterVisibility = 10.4f;
+    float waterVisibility = 13.72f;
     IClockSource clock;
     bool live;
 
@@ -274,6 +274,7 @@ public class WorldConditions : MonoBehaviour
         clock = new LocalClockSource(PreviewClock());
         live = true;
         ApplyFrom(SaveService.Instance);
+        Shader.SetGlobalFloat("_WiloGameplayDepthScale", GameplayDepthScale);
     }
 
     void ApplyFrom(SaveService save)
@@ -282,6 +283,9 @@ public class WorldConditions : MonoBehaviour
             return;
 
         ClockData stored = save.Lake.clock;
+        if (stored == null || IsUnplayedClock(save, stored))
+            return;
+
         clock.Set(new GameCalendar
         {
             DayIndex = stored.dayIndex,
@@ -296,9 +300,21 @@ public class WorldConditions : MonoBehaviour
             return;
 
         GameCalendar now = clock.Calendar;
-        save.clock.dayIndex = now.DayIndex;
-        save.clock.minutesInDay = now.MinutesInDay;
-        save.clock.epochWeekday = (int)now.EpochWeekday;
+        save.clock = ClockData.From(now);
+    }
+
+    /// <summary>
+    /// The porch writes a lake file before anyone has stood on the dock. That
+    /// used to persist midnight on March 1, which is past curfew and also the
+    /// winter-spring seam — dark water, no sunrise. Keep the authored morning.
+    /// </summary>
+    static bool IsUnplayedClock(SaveService save, ClockData stored)
+    {
+        if (stored.IsUnset)
+            return true;
+
+        bool noHarvest = save.Lake.harvested == null || save.Lake.harvested.Count == 0;
+        return stored.dayIndex == 0 && noHarvest;
     }
 
     void Start()
@@ -512,15 +528,21 @@ public class WorldConditions : MonoBehaviour
                 waterSurface = surface.transform;
         }
 
+        Shader.SetGlobalFloat("_WiloGameplayDepthScale", GameplayDepthScale);
         if (waterSurface == null)
             return;
 
         var renderer = waterSurface.GetComponent<Renderer>();
         waterHeight = renderer != null ? renderer.bounds.max.y : waterSurface.position.y;
-        waterVisibility = 10.4f;
+        // Water shader authors hide-at in gameplay feet. Fishing and fish fade
+        // want the same distance as metres of actual water column.
+        waterVisibility = 18f / (3.28084f * GameplayDepthScale);
         Material water = renderer != null ? renderer.sharedMaterial : null;
         if (water != null && water.HasProperty("_Visibility"))
-            waterVisibility = Mathf.Max(0.5f, water.GetFloat("_Visibility"));
+        {
+            float hideFeet = Mathf.Max(1f, water.GetFloat("_Visibility"));
+            waterVisibility = hideFeet / (3.28084f * GameplayDepthScale);
+        }
         hasWaterHeight = true;
     }
 }

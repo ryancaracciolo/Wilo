@@ -1,40 +1,46 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 
 /// <summary>
-/// Owns the save documents and hands them to the systems that need them.
-///
-/// Bootstraps before the first scene loads so every system can read its slice
-/// during its own Awake. Systems pull what they need; SaveService collects it
-/// back in a fixed, visible order when it is time to write. That is deliberate
-/// in place of an ISaveable framework: five systems is few enough that explicit
-/// calls stay easier to follow than reflection.
+/// Owns the save documents and the porch catalog of lakes. Each playthrough
+/// is a slot with its own lake and player files. The catalog is a small index
+/// so the intro can list cabins without opening every document.
 /// </summary>
 [DefaultExecutionOrder(-200)]
 public class SaveService : MonoBehaviour
 {
     public const string LakeKey = "lake";
     public const string PlayerKey = "player";
+    public const string CatalogKey = "slots";
 
     static SaveService instance;
 
+    LocalFileStore catalogStore;
     ISaveStore store;
     WorldConditions conditions;
     LocalFishPopulation fish;
     PlayerProgress progress;
     TackleBox tackle;
     TournamentDirector director;
+    LakeSlotCatalog catalog = new LakeSlotCatalog();
+    string currentSlotId = "";
 
     public static SaveService Instance => instance;
 
     public LakeSave Lake { get; private set; }
     public PlayerSave Player { get; private set; }
+    public IReadOnlyList<LakeSlot> Slots => catalog.slots;
 
     /// <summary>
-    /// True until the first write. Systems use it to keep their authored
-    /// defaults instead of restoring a save that does not exist yet.
+    /// True until the first write of the open slot. Systems use it to keep
+    /// their authored defaults instead of restoring a save that does not exist yet.
     /// </summary>
     public bool IsNewGame { get; private set; }
+
+    /// <summary>Set once the player leaves the porch for a chosen slot.</summary>
+    public bool SessionActive { get; private set; }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     static void Bootstrap()
@@ -56,51 +62,110 @@ public class SaveService : MonoBehaviour
         }
 
         instance = this;
-        store = new LocalFileStore();
-        Load();
-    }
-
-    void Load()
-    {
-        Lake = Read<LakeSave>(LakeKey);
-        Player = Read<PlayerSave>(PlayerKey);
-        IsNewGame = Lake == null || Player == null;
-
-        Lake ??= NewLake();
-        Player ??= NewPlayer();
-    }
-
-    public void Save()
-    {
-        Capture();
-        store.Save(LakeKey, JsonUtility.ToJson(Lake, true));
-        store.Save(PlayerKey, JsonUtility.ToJson(Player, true));
-        IsNewGame = false;
-    }
-
-    void OnApplicationQuit()
-    {
-        Save();
-    }
-
-    void OnApplicationPause(bool paused)
-    {
-        // Mobile can be killed while backgrounded without ever reaching quit.
-        if (paused)
-            Save();
-    }
-
-    /// <summary>Throws away both documents and starts over on the next play.</summary>
-    public void Wipe()
-    {
-        store.Delete(LakeKey);
-        store.Delete(PlayerKey);
+        catalogStore = new LocalFileStore();
+        LoadCatalog();
+        MigrateLegacy();
         Lake = NewLake();
         Player = NewPlayer();
         IsNewGame = true;
     }
 
-    /// <summary>Collects live state back into the documents, in a fixed order.</summary>
+    public void BeginNewSlot()
+    {
+        ForgetSceneRefs();
+        currentSlotId = Guid.NewGuid().ToString("N");
+        store = new LocalFileStore("wilo", currentSlotId);
+        Lake = NewLake();
+        Player = NewPlayer();
+        IsNewGame = true;
+        SessionActive = false;
+    }
+
+    public bool OpenSlot(string slotId)
+    {
+        if (string.IsNullOrEmpty(slotId))
+            return false;
+
+        ForgetSceneRefs();
+        currentSlotId = slotId;
+        store = new LocalFileStore("wilo", slotId);
+        LakeSave lake = Read<LakeSave>(LakeKey);
+        PlayerSave player = Read<PlayerSave>(PlayerKey);
+        if (lake == null || player == null)
+            return false;
+
+        Lake = lake;
+        Player = player;
+        IsNewGame = false;
+        SessionActive = true;
+        catalog.lastSlotId = slotId;
+        WriteCatalog();
+        return true;
+    }
+
+    public void Save()
+    {
+        if (store == null)
+            return;
+
+        // The porch writes a name and look before anyone has stood on the dock.
+        // Do not scrape the Intro scene (or a bounced lake) for clock / wallet.
+        if (SessionActive)
+        {
+            Capture();
+            IsNewGame = false;
+        }
+
+        store.Save(LakeKey, JsonUtility.ToJson(Lake, true));
+        store.Save(PlayerKey, JsonUtility.ToJson(Player, true));
+        RememberCurrentSlot();
+        WriteCatalog();
+    }
+
+    public void ActivateSession()
+    {
+        SessionActive = true;
+    }
+
+    void OnApplicationQuit()
+    {
+        if (ShouldPersist())
+            Save();
+    }
+
+    void OnApplicationPause(bool paused)
+    {
+        if (paused && ShouldPersist())
+            Save();
+    }
+
+    bool ShouldPersist()
+    {
+        return SessionActive && store != null;
+    }
+
+    /// <summary>Throws away the catalog and every slot.</summary>
+    public void Wipe()
+    {
+        for (int i = 0; i < catalog.slots.Count; i++)
+        {
+            var slotStore = new LocalFileStore("wilo", catalog.slots[i].id);
+            slotStore.Delete(LakeKey);
+            slotStore.Delete(PlayerKey);
+        }
+
+        catalogStore.Delete(CatalogKey);
+        catalogStore.Delete(LakeKey);
+        catalogStore.Delete(PlayerKey);
+        catalog = new LakeSlotCatalog();
+        currentSlotId = "";
+        store = null;
+        SessionActive = false;
+        Lake = NewLake();
+        Player = NewPlayer();
+        IsNewGame = true;
+    }
+
     void Capture()
     {
         Resolve();
@@ -140,18 +205,124 @@ public class SaveService : MonoBehaviour
             tackle = player.GetComponent<TackleBox>();
     }
 
-    T Read<T>(string key) where T : class
+    void ForgetSceneRefs()
     {
-        if (store.TryLoad(key, out string json) && TryParse(json, out T loaded))
-            return loaded;
+        conditions = null;
+        fish = null;
+        progress = null;
+        tackle = null;
+        director = null;
+    }
 
-        if (store.TryLoadBackup(key, out string backup) && TryParse(backup, out T recovered))
+    void LoadCatalog()
+    {
+        LakeSlotCatalog loaded = ReadFrom(catalogStore, CatalogKey, out LakeSlotCatalog value) ? value : null;
+        catalog = loaded ?? new LakeSlotCatalog();
+        if (catalog.slots == null)
+            catalog.slots = new List<LakeSlot>();
+    }
+
+    void WriteCatalog()
+    {
+        catalogStore.Save(CatalogKey, JsonUtility.ToJson(catalog, true));
+    }
+
+    void RememberCurrentSlot()
+    {
+        if (string.IsNullOrEmpty(currentSlotId) || Player == null)
+            return;
+
+        LakeSlot slot = FindSlot(currentSlotId);
+        if (slot == null)
         {
-            Debug.LogWarning($"Save: '{key}' would not parse, fell back to the previous copy.");
-            return recovered;
+            slot = new LakeSlot { id = currentSlotId };
+            catalog.slots.Add(slot);
+        }
+
+        slot.displayName = Player.displayName;
+        slot.lakeKey = string.IsNullOrEmpty(Player.selectedLake) ? LakeChoice.Willow : Player.selectedLake;
+        slot.dayIndex = Lake != null && Lake.clock != null ? Lake.clock.dayIndex : 0;
+        slot.lastPlayed = DateTime.UtcNow.Ticks;
+        slot.appearance = Player.appearance ?? new AppearanceData();
+        catalog.lastSlotId = currentSlotId;
+    }
+
+    LakeSlot FindSlot(string id)
+    {
+        for (int i = 0; i < catalog.slots.Count; i++)
+        {
+            if (catalog.slots[i] != null && catalog.slots[i].id == id)
+                return catalog.slots[i];
         }
 
         return null;
+    }
+
+    void MigrateLegacy()
+    {
+        if (catalog.slots.Count > 0)
+            return;
+
+        string root = catalogStore.Root;
+        string oldLake = Path.Combine(root, LakeKey + ".json");
+        string oldPlayer = Path.Combine(root, PlayerKey + ".json");
+        if (!File.Exists(oldLake) && !File.Exists(oldPlayer))
+            return;
+
+        string id = Guid.NewGuid().ToString("N");
+        string dest = Path.Combine(root, "s", id);
+        Directory.CreateDirectory(dest);
+        MoveLegacy(oldLake, Path.Combine(dest, LakeKey + ".json"));
+        MoveLegacy(oldPlayer, Path.Combine(dest, PlayerKey + ".json"));
+        MoveLegacy(oldLake + ".bak", Path.Combine(dest, LakeKey + ".json.bak"));
+        MoveLegacy(oldPlayer + ".bak", Path.Combine(dest, PlayerKey + ".json.bak"));
+
+        var slotStore = new LocalFileStore("wilo", id);
+        store = slotStore;
+        LakeSave lake = Read<LakeSave>(LakeKey) ?? NewLake();
+        PlayerSave player = Read<PlayerSave>(PlayerKey) ?? NewPlayer();
+        Lake = lake;
+        Player = player;
+        currentSlotId = id;
+        RememberCurrentSlot();
+        WriteCatalog();
+        store = null;
+        currentSlotId = "";
+        Lake = NewLake();
+        Player = NewPlayer();
+        IsNewGame = true;
+    }
+
+    static void MoveLegacy(string from, string to)
+    {
+        if (!File.Exists(from))
+            return;
+        if (File.Exists(to))
+            File.Delete(to);
+        File.Move(from, to);
+    }
+
+    T Read<T>(string key) where T : class
+    {
+        return ReadFrom(store, key, out T value) ? value : null;
+    }
+
+    static bool ReadFrom<T>(ISaveStore source, string key, out T value) where T : class
+    {
+        value = null;
+        if (source == null)
+            return false;
+
+        if (source.TryLoad(key, out string json) && TryParse(json, out value))
+            return true;
+
+        if (source.TryLoadBackup(key, out string backup) && TryParse(backup, out value))
+        {
+            Debug.LogWarning($"Save: '{key}' would not parse, fell back to the previous copy.");
+            return true;
+        }
+
+        return false;
     }
 
     static bool TryParse<T>(string json, out T value) where T : class
@@ -175,7 +346,8 @@ public class SaveService : MonoBehaviour
         return new LakeSave
         {
             lakeId = Guid.NewGuid().ToString("N"),
-            worldSeed = NewSeed()
+            worldSeed = NewSeed(),
+            clock = ClockData.From(GameCalendar.NewGame())
         };
     }
 
@@ -193,7 +365,7 @@ public class SaveService : MonoBehaviour
         return seed == 0 ? 1 : seed;
     }
 
-    string Location => store is LocalFileStore local ? local.Root : "(not a file store)";
+    string Location => store is LocalFileStore local ? local.Root : catalogStore != null ? catalogStore.Root : "(no store)";
 
     [ContextMenu("Save/Save now")]
     void DebugSave()
@@ -212,6 +384,6 @@ public class SaveService : MonoBehaviour
     [ContextMenu("Save/Log location")]
     void DebugLocation()
     {
-        Debug.Log($"Save: lake '{Lake.lakeId}' seed {Lake.worldSeed}, player '{Player.playerId}', at {Location}");
+        Debug.Log($"Save: {catalog.slots.Count} lakes, open '{currentSlotId}', at {Location}");
     }
 }

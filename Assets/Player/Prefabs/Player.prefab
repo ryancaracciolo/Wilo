@@ -134,6 +134,7 @@ GameObject:
   - component: {fileID: 8165954297627496651}
   - component: {fileID: 4652612597619487346}
   - component: {fileID: 4869169464896576213}
+  - component: {fileID: 871543911036793421}
   m_Layer: 6
   m_Name: Player
   m_TagString: Player
@@ -323,6 +324,19 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 899a7f0d0e9cb4fed868ec13e51cfe30, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerAnimator
+--- !u!114 &871543911036793421
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3260208116575933819}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2c877e5faf2f249f694300d55c53bda2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerAppearance
+  skinShader: {fileID: 4800000, guid: a926f9911f5b44e84a91d1b5a59fca5b, type: 3}
 --- !u!1001 &4497287250793937490
 PrefabInstance:
   m_ObjectHideFlags: 0

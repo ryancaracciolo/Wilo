@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 /// <summary>
 /// Shared lake-ripple impulses. Gameplay emits a kind; the water shader draws
@@ -33,8 +34,26 @@ public class WaterRipples : MonoBehaviour
         }
     }
 
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    static void ResetStatics()
+    {
+        instance = null;
+        SceneManager.sceneLoaded -= OnSceneLoaded;
+        SceneManager.sceneLoaded += OnSceneLoaded;
+    }
+
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void Bootstrap()
+    {
+        EnsureOnSurface();
+    }
+
+    static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        EnsureOnSurface();
+    }
+
+    static void EnsureOnSurface()
     {
         if (FindFirstObjectByType<WaterRipples>() != null)
             return;
@@ -42,8 +61,6 @@ public class WaterRipples : MonoBehaviour
         var surface = GameObject.Find("Surface");
         if (surface != null)
             surface.AddComponent<WaterRipples>();
-        else
-            new GameObject("WaterRipples").AddComponent<WaterRipples>();
     }
 
     void OnEnable()

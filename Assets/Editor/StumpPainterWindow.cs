@@ -63,7 +63,7 @@ public class StumpPainterWindow : EditorWindow
     public static void Open()
     {
         var window = GetWindow<StumpPainterWindow>("Stump Painter");
-        window.minSize = new Vector2(340, 540);
+        window.minSize = new Vector2(340, 600);
         window.Show();
     }
 
@@ -183,6 +183,11 @@ public class StumpPainterWindow : EditorWindow
         EditorGUILayout.LabelField("Stumps In Parent", count.ToString());
         if (lastPaintedCount > 0)
             EditorGUILayout.LabelField("Last Stroke", lastPaintedCount.ToString());
+
+        EditorGUILayout.Space(6);
+        TerrainAnchorEditorUtil.DrawFollowSection(
+            parent != null ? parent : GameObject.Find(ParentName)?.transform,
+            "stumps");
 
         using (new EditorGUI.DisabledScope(parent == null || count == 0))
         {
@@ -397,6 +402,7 @@ public class StumpPainterWindow : EditorWindow
 
         instance.transform.SetPositionAndRotation(position, rotation);
         instance.transform.localScale = new Vector3(xzScale, yScale, xzScale);
+        TerrainAnchorEditorUtil.AddConfigured(instance, embed, yaw, slopeAlign);
 
         existingPositions.Add(position);
     }
@@ -404,23 +410,7 @@ public class StumpPainterWindow : EditorWindow
     int EraseAt(Vector3 point)
     {
         Transform container = parent != null ? parent : GameObject.Find(ParentName)?.transform;
-        if (container == null)
-            return 0;
-
-        float radiusSq = brushRadius * brushRadius;
-        int removed = 0;
-        for (int i = container.childCount - 1; i >= 0; i--)
-        {
-            Transform child = container.GetChild(i);
-            Vector3 delta = child.position - point;
-            delta.y = 0f;
-            if (delta.sqrMagnitude <= radiusSq)
-            {
-                Undo.DestroyObjectImmediate(child.gameObject);
-                removed++;
-            }
-        }
-
+        int removed = TerrainAnchorEditorUtil.EraseInRadius(container, point, brushRadius);
         if (removed > 0)
             CacheExistingPositions();
         return removed;
@@ -442,13 +432,8 @@ public class StumpPainterWindow : EditorWindow
 
     void CacheExistingPositions()
     {
-        existingPositions.Clear();
         Transform container = parent != null ? parent : GameObject.Find(ParentName)?.transform;
-        if (container == null)
-            return;
-
-        for (int i = 0; i < container.childCount; i++)
-            existingPositions.Add(container.GetChild(i).position);
+        TerrainAnchorEditorUtil.CachePositions(container, existingPositions);
     }
 
     bool TryGetLakebedFromRay(Ray ray, out RaycastHit bed, out float waterY, out bool hitWater)
@@ -717,7 +702,7 @@ public class StumpPainterWindow : EditorWindow
     int CountStumps()
     {
         Transform container = parent != null ? parent : GameObject.Find(ParentName)?.transform;
-        return container != null ? container.childCount : 0;
+        return TerrainAnchorEditorUtil.CountPainted(container);
     }
 
     static bool IsMossPrefab(GameObject prefab)

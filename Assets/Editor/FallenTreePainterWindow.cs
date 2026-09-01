@@ -80,7 +80,7 @@ public class FallenTreePainterWindow : EditorWindow
     public static void Open()
     {
         var window = GetWindow<FallenTreePainterWindow>("Fallen Tree Painter");
-        window.minSize = new Vector2(360, 560);
+        window.minSize = new Vector2(360, 620);
         window.Show();
     }
 
@@ -191,6 +191,11 @@ public class FallenTreePainterWindow : EditorWindow
         EditorGUILayout.LabelField("Pieces In Parent", count.ToString());
         if (lastPaintedCount > 0)
             EditorGUILayout.LabelField("Last Action", lastPaintedCount.ToString());
+
+        EditorGUILayout.Space(6);
+        TerrainAnchorEditorUtil.DrawFollowSection(
+            parent != null ? parent : GameObject.Find(ParentName)?.transform,
+            "fallen trees");
 
         using (new EditorGUI.DisabledScope(parent == null || count == 0))
         {
@@ -361,6 +366,7 @@ public class FallenTreePainterWindow : EditorWindow
         Vector3 position = bed.point - Vector3.up * embed;
         instance.transform.SetPositionAndRotation(position, rotation);
         instance.transform.localScale = Vector3.one * scale;
+        TerrainAnchorEditorUtil.AddKeepingRotation(instance);
         return 1;
     }
 
@@ -528,24 +534,7 @@ public class FallenTreePainterWindow : EditorWindow
     int EraseAt(Vector3 point)
     {
         Transform container = parent != null ? parent : GameObject.Find(ParentName)?.transform;
-        if (container == null)
-            return 0;
-
-        float radiusSq = eraseRadius * eraseRadius;
-        int removed = 0;
-        for (int i = container.childCount - 1; i >= 0; i--)
-        {
-            Transform child = container.GetChild(i);
-            Vector3 delta = child.position - point;
-            delta.y = 0f;
-            if (delta.sqrMagnitude <= radiusSq)
-            {
-                Undo.DestroyObjectImmediate(child.gameObject);
-                removed++;
-            }
-        }
-
-        return removed;
+        return TerrainAnchorEditorUtil.EraseInRadius(container, point, eraseRadius);
     }
 
     string PlacementLabel(bool canPlace, bool nearShore, float depth)
@@ -748,7 +737,7 @@ public class FallenTreePainterWindow : EditorWindow
     int CountPlaced()
     {
         Transform container = parent != null ? parent : GameObject.Find(ParentName)?.transform;
-        return container != null ? container.childCount : 0;
+        return TerrainAnchorEditorUtil.CountPainted(container);
     }
 
     void ClearAll()

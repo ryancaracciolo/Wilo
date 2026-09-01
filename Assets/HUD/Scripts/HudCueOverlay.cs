@@ -12,6 +12,9 @@ public class HudCueOverlay : VisualElement
     const float ActionHeightStanding = 2.05f;
     const float ActionHeightSeated = 1.55f;
     const float ActionStackPx = 38f;
+    const float ActionBobPx = 6f;
+    const float ActionBobSpeed = 2.6f;
+    const float AnchorLiftPx = 16f;
 
     readonly Dictionary<string, Chip> chips = new Dictionary<string, Chip>(8);
     readonly List<string> stale = new List<string>(8);
@@ -91,14 +94,17 @@ public class HudCueOverlay : VisualElement
         {
             if (cue.Kind == HudCueKind.Action)
                 panel.y -= actionSlot++ * ActionStackPx;
-            PlaceAt(chip.Root, panel, true);
+            float bob = cue.Kind == HudCueKind.Action
+                ? Mathf.Sin(Time.unscaledTime * ActionBobSpeed) * ActionBobPx
+                : 0f;
+            PlaceWorld(chip, panel, true, bob);
             return;
         }
 
         if (cue.Kind == HudCueKind.Action)
-            PlaceScreenAction(chip.Root, actionSlot++);
+            PlaceScreenAction(chip, actionSlot++);
         else
-            PlaceScreenAlert(chip.Root);
+            PlaceScreenAlert(chip);
     }
 
     Chip Ensure(HudCue cue)
@@ -123,7 +129,10 @@ public class HudCueOverlay : VisualElement
         root.AddToClassList("hud-cue");
         root.AddToClassList("hud-cue--action");
         root.userData = id;
+        root.usageHints = UsageHints.DynamicTransform;
+        PinWorldLayout(root);
         root.RegisterCallback<ClickEvent>(OnActionClicked);
+        root.RegisterCallback<GeometryChangedEvent>(OnChipGeometry);
 
         var key = new Label();
         key.AddToClassList("hud-cue-key");
@@ -144,12 +153,15 @@ public class HudCueOverlay : VisualElement
         };
     }
 
-    static Chip BuildAlert()
+    Chip BuildAlert()
     {
         var root = new VisualElement();
         root.AddToClassList("hud-cue");
         root.AddToClassList("hud-cue--alert");
         root.pickingMode = PickingMode.Ignore;
+        root.usageHints = UsageHints.DynamicTransform;
+        PinWorldLayout(root);
+        root.RegisterCallback<GeometryChangedEvent>(OnChipGeometry);
 
         var bang = new Label("!");
         bang.AddToClassList("hud-cue-bang");
@@ -162,6 +174,30 @@ public class HudCueOverlay : VisualElement
             Root = root,
             Bang = bang
         };
+    }
+
+    static void PinWorldLayout(VisualElement root)
+    {
+        root.style.left = 0;
+        root.style.top = 0;
+        root.style.right = StyleKeyword.Auto;
+        root.style.bottom = StyleKeyword.Auto;
+        root.style.translate = new Translate(0, 0);
+    }
+
+    void OnChipGeometry(GeometryChangedEvent evt)
+    {
+        if (evt.target is not VisualElement root)
+            return;
+
+        foreach (var pair in chips)
+        {
+            if (pair.Value.Root != root)
+                continue;
+            pair.Value.Width = evt.newRect.width;
+            pair.Value.Height = evt.newRect.height;
+            return;
+        }
     }
 
     static void OnActionClicked(ClickEvent evt)
@@ -235,9 +271,6 @@ public class HudCueOverlay : VisualElement
         }
 
         Vector3 world = anchor.position + offset;
-        if (cue.Kind == HudCueKind.Action)
-            world.y += Mathf.Sin(Time.unscaledTime * 2.6f) * 0.08f;
-
         Vector3 screen = camera.WorldToScreenPoint(world);
         if (screen.z <= 0.05f)
             return false;
@@ -254,41 +287,51 @@ public class HudCueOverlay : VisualElement
         return true;
     }
 
-    static void PlaceAt(VisualElement element, Vector2 panel, bool above)
+    static void PlaceWorld(Chip chip, Vector2 panel, bool above, float bobPx)
     {
-        element.style.left = panel.x;
-        element.style.top = panel.y;
-        element.style.right = StyleKeyword.Auto;
-        element.style.bottom = StyleKeyword.Auto;
+        if (!chip.WorldPinned)
+        {
+            PinWorldLayout(chip.Root);
+            chip.WorldPinned = true;
+        }
 
-        float width = element.resolvedStyle.width;
-        float height = element.resolvedStyle.height;
-        if (above && width > 1f && height > 1f)
-            element.style.translate = new Translate(-width * 0.5f, -height - 16f);
-        else if (above)
-            element.style.translate = new Translate(Length.Percent(-50), Length.Percent(-100));
-        else
-            element.style.translate = new Translate(Length.Percent(-50), Length.Percent(-50));
+        float width = chip.Width > 1f ? chip.Width : chip.Root.resolvedStyle.width;
+        float height = chip.Height > 1f ? chip.Height : chip.Root.resolvedStyle.height;
+        if (width > 1f)
+            chip.Width = width;
+        if (height > 1f)
+            chip.Height = height;
+
+        float ox = width > 1f ? -width * 0.5f : 0f;
+        float oy = height > 1f
+            ? (above ? -height - AnchorLiftPx : -height * 0.5f)
+            : 0f;
+
+        chip.Root.transform.position = new Vector3(panel.x + ox, panel.y + oy - bobPx, 0f);
     }
 
-    static void PlaceScreenAction(VisualElement element, int slot)
+    static void PlaceScreenAction(Chip chip, int slot)
     {
-        element.style.left = Length.Percent(50);
-        element.style.bottom = Length.Percent(22 + slot * 8);
-        element.style.top = StyleKeyword.Auto;
-        element.style.right = StyleKeyword.Auto;
-        element.style.translate = new Translate(Length.Percent(-50), new Length(0));
-        element.style.scale = new Scale(Vector2.one);
-        element.style.opacity = 1f;
+        chip.WorldPinned = false;
+        chip.Root.transform.position = Vector3.zero;
+        chip.Root.style.left = Length.Percent(50);
+        chip.Root.style.bottom = Length.Percent(22 + slot * 8);
+        chip.Root.style.top = StyleKeyword.Auto;
+        chip.Root.style.right = StyleKeyword.Auto;
+        chip.Root.style.translate = new Translate(Length.Percent(-50), new Length(0));
+        chip.Root.style.scale = new Scale(Vector2.one);
+        chip.Root.style.opacity = 1f;
     }
 
-    static void PlaceScreenAlert(VisualElement element)
+    static void PlaceScreenAlert(Chip chip)
     {
-        element.style.left = Length.Percent(50);
-        element.style.top = Length.Percent(28);
-        element.style.right = StyleKeyword.Auto;
-        element.style.bottom = StyleKeyword.Auto;
-        element.style.translate = new Translate(Length.Percent(-50), Length.Percent(-50));
+        chip.WorldPinned = false;
+        chip.Root.transform.position = Vector3.zero;
+        chip.Root.style.left = Length.Percent(50);
+        chip.Root.style.top = Length.Percent(28);
+        chip.Root.style.right = StyleKeyword.Auto;
+        chip.Root.style.bottom = StyleKeyword.Auto;
+        chip.Root.style.translate = new Translate(Length.Percent(-50), Length.Percent(-50));
     }
 
     sealed class Chip
@@ -298,5 +341,8 @@ public class HudCueOverlay : VisualElement
         public Label Key;
         public Label Label;
         public Label Bang;
+        public float Width;
+        public float Height;
+        public bool WorldPinned;
     }
 }
