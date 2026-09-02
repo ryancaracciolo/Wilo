@@ -18,7 +18,7 @@ public class PlayerOrbitCamera : MonoBehaviour
     [SerializeField] float defaultDistance = 8.2f;
     [SerializeField] float minDistance = 4.5f;
     [SerializeField] float maxDistance = 15.5f;
-    [SerializeField] float defaultPitch = 48f;
+    [SerializeField] float defaultPitch = 38f;
     [SerializeField] float minPitch = 8f;
     [SerializeField] float maxPitch = 68f;
     [SerializeField] float mouseSensitivity = 0.32f;

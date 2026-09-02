@@ -185,7 +185,7 @@ public class IntroHud : MonoBehaviour
 
     void FillHomeCard()
     {
-        Label title = HudUi.Title("Welcome to Willow");
+        Label title = HudUi.Title("Welcome to Willow Lake");
         title.AddToClassList("hud-intro-title");
         cardBody.Add(title);
         cardBody.Add(HudUi.Muted("Pick up where you left off, or start a new lake."));
@@ -213,7 +213,7 @@ public class IntroHud : MonoBehaviour
 
     void FillCreateCard()
     {
-        Label title = HudUi.Title("Welcome to Willow");
+        Label title = HudUi.Title("Welcome to Willow Lake");
         title.AddToClassList("hud-intro-title");
         cardBody.Add(title);
         cardBody.Add(HudUi.Muted("Pick your lake, sign your name, and dress for the water."));
