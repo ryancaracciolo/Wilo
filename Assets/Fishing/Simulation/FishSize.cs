@@ -28,11 +28,12 @@ public readonly struct FishSize
         float u,
         float v,
         HabitatProfile profile = null,
-        HabitatFeatures features = default)
+        HabitatFeatures features = default,
+        float w = 0.37f)
     {
         float pounds;
         if (profile != null && species != null)
-            pounds = profile.RollPounds(species, features, u, v);
+            pounds = profile.RollPounds(species, features, u, v, w);
         else
         {
             float n = Mathf.Clamp01((u + v) * 0.5f);

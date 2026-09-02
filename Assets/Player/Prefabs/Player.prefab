@@ -273,6 +273,14 @@ MonoBehaviour:
   castOriginOffset: {x: 0, y: 0.9, z: 0.22}
   lureClearance: 0.1
   lineColor: {r: 0.93, g: 0.9, b: 0.82, a: 0.9}
+  polePrefab: {fileID: 7832587910810352839, guid: ee054fb969f87474f99ae62404322986, type: 3}
+  poleScale: 0.48
+  poleThickness: 3.6
+  poleHoldOffset: {x: 0.18, y: 0.4, z: 0.08}
+  poleCastHoldOffset: {x: 0.24, y: 0.42, z: -0.05}
+  polePitch: 14
+  poleCastPitch: 6
+  poleCastLean: {x: 0.95, y: 0.12, z: 0.5}
   liveColor: {r: 0.96, g: 0.97, b: 1, a: 1}
   invalidColor: {r: 1, g: 0.58, b: 0.58, a: 1}
 --- !u!114 &8165954297627496651

@@ -28,6 +28,10 @@ public class TournamentSite : MonoBehaviour
     float cachedWaterY;
     bool hasWaterY;
 
+    public Transform Dock => DockRoot;
+
+    public Vector3 DockPosition => DockRoot != null ? DockRoot.position : transform.position;
+
     public bool Contains(Vector3 worldPosition)
     {
         if (NearDock(worldPosition) || InClearing(worldPosition))

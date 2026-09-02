@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::LureDefinition
   Id: crank
   DisplayName: Crankbait
-  Hint: Digs to its own depth and holds there. Good for hunting a break.
+  Hint: Covers a lot of water at medium depth.
   Color: {r: 0.36, g: 0.62, b: 0.52, a: 1}
   Icon: {fileID: 21300000, guid: 03089dd22aeb5493a9d341bbfbb85732, type: 3}
   Kind: 3

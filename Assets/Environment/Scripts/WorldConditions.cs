@@ -35,54 +35,28 @@ public class WorldConditions : MonoBehaviour
     [SerializeField, Range(0.2f, 1f), Tooltip("Multiplies geometric depth for sonar and fishing. 0.4 makes a 20 ft hole read as 8 ft. Terrain stays put.")]
     float gameplayDepthScale = 0.4f;
 
-    static readonly string[] StructureRoots = { "Rocks", "Stumps", "FallenTrees" };
+    public const string StructureLayerName = "Structure";
+
+    static readonly string[] StructureRoots = { "Rocks", "Stumps", "FallenTrees", "Logs" };
     static readonly string[] CoverRoots =
     {
         "Rocks", "Stumps", "FallenTrees", "Logs", "LilyPads", "WeedBeds"
     };
     static readonly RaycastHit[] DepthHits = new RaycastHit[24];
     static readonly List<Renderer> StructureScratch = new List<Renderer>();
+    const string LureColliderName = "LureCollider";
 
-    /// <summary>
-    /// A piece of rock or timber standing off the bed. None of this scenery has
-    /// colliders, so each one is baked once as the dome inscribed in its bounds.
-    /// The boulders here are scaled up hard enough that a box would read as a
-    /// wide flat shelf; a dome keeps them shaped like the thing being sampled.
-    /// </summary>
-    struct StructureDome
-    {
-        public float CenterX;
-        public float CenterZ;
-        public float HalfX;
-        public float HalfZ;
-        public float TopY;
-        public float HalfY;
-
-        public bool TryHeight(float x, float z, out float y)
-        {
-            float dx = (x - CenterX) / HalfX;
-            float dz = (z - CenterZ) / HalfZ;
-            float radius = dx * dx + dz * dz;
-            if (radius >= 1f)
-            {
-                y = 0f;
-                return false;
-            }
-
-            y = TopY - HalfY * (1f - Mathf.Sqrt(1f - radius));
-            return true;
-        }
-    }
+    bool structureCached;
 
     PlayerBoatInteractor boat;
     Transform player;
     Transform waterSurface;
-    readonly List<StructureDome> structure = new List<StructureDome>();
     float waterHeight;
     bool hasWaterHeight;
     float waterVisibility = 13.72f;
     IClockSource clock;
     bool live;
+    readonly List<MapSpot> mapSpots = new List<MapSpot>();
 
     public WeatherKind Weather => weather;
     public float AirTempF => airTempF;
@@ -129,12 +103,16 @@ public class WorldConditions : MonoBehaviour
 
     GameCalendar Clock => live && clock != null ? clock.Calendar : PreviewClock();
     public float GameplayDepthScale => gameplayDepthScale > 0.05f ? gameplayDepthScale : 0.5f;
+    public static int StructureLayer => LayerMask.NameToLayer(StructureLayerName);
+    public static int StructureMask => LayerMask.GetMask(StructureLayerName);
     public float DepthFeet { get; private set; }
     public float BoatSpeedMph { get; private set; }
     public bool OnBoat { get; private set; }
     public bool OverWater { get; private set; }
     public Transform PlayerTransform => player;
     public BoatMotor OccupiedBoat => boat != null ? boat.OccupiedBoat : null;
+    public IReadOnlyList<MapSpot> MapSpots => mapSpots;
+    public event Action MapSpotsChanged;
 
     public float WaterHeight
     {
@@ -219,7 +197,7 @@ public class WorldConditions : MonoBehaviour
         clock.Set(next);
     }
 
-    public void AdvanceDays(int days, float wakeHour = 6.5f)
+    public void AdvanceDays(int days, float wakeHour = GameCalendar.NewGameHour)
     {
         if (!Application.isPlaying)
         {
@@ -253,7 +231,7 @@ public class WorldConditions : MonoBehaviour
     void DebugNight() => JumpTo(Mathf.Repeat(DuskHour + 2f, 24f));
 
     [ContextMenu("Time/Skip A Day")]
-    void DebugSkipDay() => Jump(() => AdvanceDays(1, 7.5f));
+    void DebugSkipDay() => Jump(() => AdvanceDays(1, GameCalendar.NewGameHour));
 
     [ContextMenu("Time/Skip A Season")]
     void DebugSkipSeason() => Jump(() => AdvanceDays(GameCalendar.DaysPerSeason));
@@ -282,6 +260,8 @@ public class WorldConditions : MonoBehaviour
         if (save == null || save.IsNewGame)
             return;
 
+        LoadMapSpots(save.Lake);
+
         ClockData stored = save.Lake.clock;
         if (stored == null || IsUnplayedClock(save, stored))
             return;
@@ -296,11 +276,64 @@ public class WorldConditions : MonoBehaviour
 
     public void CaptureTo(LakeSave save)
     {
-        if (save == null || clock == null)
+        if (save == null)
             return;
 
-        GameCalendar now = clock.Calendar;
-        save.clock = ClockData.From(now);
+        if (clock != null)
+            save.clock = ClockData.From(clock.Calendar);
+
+        if (save.mapSpots == null)
+            save.mapSpots = new List<MapSpot>();
+        save.mapSpots.Clear();
+        save.mapSpots.AddRange(mapSpots);
+    }
+
+    void LoadMapSpots(LakeSave lake)
+    {
+        mapSpots.Clear();
+        if (lake?.mapSpots == null)
+            return;
+
+        for (int i = 0; i < lake.mapSpots.Count; i++)
+        {
+            MapSpot spot = lake.mapSpots[i];
+            if (spot == null || string.IsNullOrWhiteSpace(spot.name))
+                continue;
+            if (string.IsNullOrEmpty(spot.id))
+                spot.id = Guid.NewGuid().ToString("N");
+            mapSpots.Add(spot);
+        }
+    }
+
+    public MapSpot AddMapSpot(string name, Vector3 world)
+    {
+        string clean = MapSpot.CleanName(name);
+        if (clean.Length == 0 || mapSpots.Count >= MapSpot.MaxCount)
+            return null;
+
+        var spot = new MapSpot
+        {
+            id = Guid.NewGuid().ToString("N"),
+            name = clean,
+            worldPosition = world
+        };
+        mapSpots.Add(spot);
+        MapSpotsChanged?.Invoke();
+        return spot;
+    }
+
+    public bool RemoveMapSpot(MapSpot spot)
+    {
+        if (spot == null || !mapSpots.Remove(spot))
+            return false;
+        MapSpotsChanged?.Invoke();
+        return true;
+    }
+
+    public void CopyMapSpots(List<MapSpot> dest)
+    {
+        dest.Clear();
+        dest.AddRange(mapSpots);
     }
 
     /// <summary>
@@ -406,6 +439,9 @@ public class WorldConditions : MonoBehaviour
         if (terrain != null && terrain.terrainData != null)
             bedY = terrain.SampleHeight(world) + terrain.transform.position.y;
 
+        if (includeStructure && !structureCached)
+            CacheStructure();
+
         int mask = ~LayerMask.GetMask("Player", "Water", "Ignore Raycast", "UI", "TransparentFX");
         Vector3 origin = world;
         origin.y = waterHeight + 2.5f;
@@ -417,19 +453,6 @@ public class WorldConditions : MonoBehaviour
                 continue;
             if (hit.point.y > bedY)
                 bedY = hit.point.y;
-        }
-
-        if (includeStructure)
-        {
-            if (structure.Count == 0)
-                CacheStructure();
-
-            for (int i = 0; i < structure.Count; i++)
-            {
-                float top;
-                if (structure[i].TryHeight(world.x, world.z, out top) && top > bedY)
-                    bedY = top;
-            }
         }
 
         if (float.IsNegativeInfinity(bedY))
@@ -474,9 +497,25 @@ public class WorldConditions : MonoBehaviour
         return false;
     }
 
+    /// <summary>
+    /// Rock and timber have no authored colliders. Each mesh gets a hidden
+    /// MeshCollider at play time so the lure can sit on the real surface
+    /// instead of a bounds-sized dome.
+    /// </summary>
     void CacheStructure()
     {
-        structure.Clear();
+        if (structureCached || !Application.isPlaying)
+            return;
+
+        int layer = StructureLayer;
+        if (layer < 0)
+            return;
+
+        Physics.IgnoreLayerCollision(layer, 0, true);
+        int playerLayer = LayerMask.NameToLayer("Player");
+        if (playerLayer >= 0)
+            Physics.IgnoreLayerCollision(layer, playerLayer, true);
+
         for (int i = 0; i < StructureRoots.Length; i++)
         {
             var root = GameObject.Find(StructureRoots[i]);
@@ -486,23 +525,34 @@ public class WorldConditions : MonoBehaviour
             StructureScratch.Clear();
             root.GetComponentsInChildren(true, StructureScratch);
             for (int r = 0; r < StructureScratch.Count; r++)
-            {
-                Renderer renderer = StructureScratch[r];
-                if (renderer == null || !renderer.enabled)
-                    continue;
-
-                Bounds bounds = renderer.bounds;
-                structure.Add(new StructureDome
-                {
-                    CenterX = bounds.center.x,
-                    CenterZ = bounds.center.z,
-                    HalfX = Mathf.Max(0.05f, bounds.extents.x),
-                    HalfZ = Mathf.Max(0.05f, bounds.extents.z),
-                    TopY = bounds.max.y,
-                    HalfY = bounds.extents.y
-                });
-            }
+                EnsureLureCollider(StructureScratch[r], layer);
         }
+
+        Physics.SyncTransforms();
+        structureCached = true;
+    }
+
+    static void EnsureLureCollider(Renderer renderer, int layer)
+    {
+        if (renderer == null || !renderer.enabled)
+            return;
+
+        var filter = renderer.GetComponent<MeshFilter>();
+        if (filter == null || filter.sharedMesh == null)
+            return;
+
+        Transform existing = renderer.transform.Find(LureColliderName);
+        if (existing != null)
+            return;
+
+        var go = new GameObject(LureColliderName);
+        go.layer = layer;
+        go.hideFlags = HideFlags.DontSave;
+        go.transform.SetParent(renderer.transform, false);
+
+        var collider = go.AddComponent<MeshCollider>();
+        collider.sharedMesh = filter.sharedMesh;
+        collider.convex = false;
     }
 
     GameCalendar PreviewClock()

@@ -25,7 +25,13 @@ public class GameHud : MonoBehaviour
     VisualElement modalCard;
     VisualElement popoverCatcher;
     VisualElement lurePopover;
+    ScrollView lureList;
     Button lureChip;
+    float lurePlaceRight = float.NaN;
+    float lurePlaceBottom = float.NaN;
+    float lurePlaceWidth = float.NaN;
+    float lurePlaceHeight = float.NaN;
+    float lurePlaceMaxH = float.NaN;
     VisualElement lureSwatch;
     Label lureName;
     MapSonarPanel mapSonar;
@@ -57,7 +63,12 @@ public class GameHud : MonoBehaviour
     Button catchMark;
     CatchRecord shownCatch;
     CatchRecord selectedMarked;
+    MapSpot selectedSpot;
+    bool namingSpot;
+    Vector3 pendingMarkWorld;
+    readonly MapSpot pendingSpot = new MapSpot { id = "pending" };
     readonly List<CatchRecord> selectedCluster = new List<CatchRecord>();
+    readonly List<MapSpot> spotScratch = new List<MapSpot>();
     readonly List<TournamentOccurrence> skipScratch = new List<TournamentOccurrence>();
     readonly List<TournamentOccurrence> enteredScratch = new List<TournamentOccurrence>();
     TourneyTab tourneyTab;
@@ -82,6 +93,8 @@ public class GameHud : MonoBehaviour
             director = GetComponent<TournamentDirector>() ?? gameObject.AddComponent<TournamentDirector>();
         if (GetComponent<HudCuePresenter>() == null)
             gameObject.AddComponent<HudCuePresenter>();
+        if (GetComponent<TournamentBoatDirector>() == null)
+            gameObject.AddComponent<TournamentBoatDirector>();
     }
 
     void OnEnable()
@@ -95,6 +108,8 @@ public class GameHud : MonoBehaviour
             progress.Caught += ShowCatch;
             progress.MarkedChanged += RefreshMapMarks;
         }
+        if (conditions != null)
+            conditions.MapSpotsChanged += RefreshMapMarks;
         if (fishing != null)
             fishing.Escaped += ShowEscape;
         if (dayCycle != null)
@@ -121,6 +136,8 @@ public class GameHud : MonoBehaviour
             progress.Caught -= ShowCatch;
             progress.MarkedChanged -= RefreshMapMarks;
         }
+        if (conditions != null)
+            conditions.MapSpotsChanged -= RefreshMapMarks;
         if (fishing != null)
             fishing.Escaped -= ShowEscape;
         if (dayCycle != null)
@@ -137,6 +154,7 @@ public class GameHud : MonoBehaviour
             director.Finished -= ShowTournamentResult;
         }
 
+        CloseLurePicker();
         HudInput.Reset();
         HudCues.Reset();
         shownCatch = null;
@@ -156,6 +174,7 @@ public class GameHud : MonoBehaviour
         mapSonar?.BakeMap(conditions != null ? conditions.GameplayDepthScale : 0.5f);
         journalMap?.Bake(conditions != null ? conditions.GameplayDepthScale : 0.5f);
         RefreshMapMarks();
+        RefreshLureChip();
     }
 
     void Update()
@@ -422,6 +441,7 @@ public class GameHud : MonoBehaviour
         mapSonar = new MapSonarPanel();
         mapSonar.ExpandRequested += OpenMapJournal;
         mapSonar.ClusterClicked += OnMiniMapClusterClicked;
+        mapSonar.SpotClicked += OnMiniMapSpotClicked;
         topRight.Add(mapSonar);
         root.Add(topRight);
 
@@ -579,6 +599,8 @@ public class GameHud : MonoBehaviour
         journalMap.SetPinScale(1.35f);
         journalMap.SetPanZoom(true);
         journalMap.ClusterClicked += OnJournalClusterClicked;
+        journalMap.SpotClicked += OnJournalSpotClicked;
+        journalMap.EmptyClicked += OnJournalEmptyClicked;
         mapWrap.Add(journalMap);
         mapJournalCard.Add(mapWrap);
 
@@ -794,6 +816,9 @@ public class GameHud : MonoBehaviour
         stats.Add(HudUi.StatTile(reputation.ToString(), "Reputation", HudUi.PaintStar));
         body.Add(stats);
 
+        if (CanSleep)
+            body.Add(MakeRestSection());
+
         var pb = new VisualElement();
         pb.AddToClassList("hud-section");
         pb.AddToClassList("hud-profile-best");
@@ -856,6 +881,61 @@ public class GameHud : MonoBehaviour
 
         body.Add(history);
         ShowModal();
+    }
+
+    bool CanSleep => dayCycle != null && !dayCycle.IsTurningIn && !DaySummaryOpen;
+
+    VisualElement MakeRestSection()
+    {
+        var rest = new VisualElement();
+        rest.AddToClassList("hud-section");
+        rest.Add(HudUi.Muted("Rest"));
+        rest.Add(HudUi.Body("Turn in for the night and wake tomorrow morning."));
+        if (conditions != null)
+            rest.Add(HudUi.Muted($"Next up  ·  {conditions.Calendar.DateLabelFor(conditions.DayIndex + 1)}"));
+
+        var actions = new VisualElement();
+        actions.AddToClassList("hud-form-actions");
+        actions.Add(HudUi.TextButton("Sleep until morning", OpenSleepSheet));
+        rest.Add(actions);
+        return rest;
+    }
+
+    void OpenSleepSheet()
+    {
+        if (!CanSleep)
+            return;
+
+        VisualElement body = BeginCard("Turn in", OpenProfile);
+        int tomorrow = conditions != null ? conditions.DayIndex + 1 : 0;
+        string date = conditions != null
+            ? conditions.Calendar.DateLabelFor(tomorrow)
+            : "tomorrow";
+        float wake = dayCycle.WakeHourFor(tomorrow);
+
+        body.Add(HudUi.Body("Sleep until morning?"));
+        body.Add(HudUi.Muted($"You wake at the cabin on {date}, around {GameCalendar.FormatHour(wake)}."));
+
+        if (director != null && director.Phase != TournamentPhase.Idle)
+            body.Add(HudUi.Muted("The tournament is still open. Sleeping now forfeits your bag."));
+        else if (director != null && conditions != null && director.HasRegistrationOn(conditions.DayIndex))
+            body.Add(HudUi.Muted("You'll miss today's tournament."));
+
+        var actions = new VisualElement();
+        actions.AddToClassList("hud-form-actions");
+        actions.Add(HudUi.TextButton("Back", OpenProfile));
+        actions.Add(HudUi.TextButton("Sleep", ConfirmSleep, true));
+        body.Add(actions);
+        ShowModal();
+    }
+
+    void ConfirmSleep()
+    {
+        if (!CanSleep)
+            return;
+
+        CloseAllOverlays();
+        dayCycle.TurnIn(false);
     }
 
     static VisualElement ProfileResultRow(TournamentResult past)
@@ -1065,8 +1145,11 @@ public class GameHud : MonoBehaviour
         head.Add(HudUi.Pill(place, result.Placed));
         row.Add(head);
 
-        if (!string.IsNullOrEmpty(result.DateLabel))
-            row.Add(HudUi.Muted(result.DateLabel));
+        string date = conditions != null
+            ? conditions.Calendar.DateLabelFor(result.DayIndex)
+            : result.DateLabel;
+        if (!string.IsNullOrEmpty(date))
+            row.Add(HudUi.Muted(date));
         if (!result.Forfeited)
             row.Add(HudUi.Muted($"{result.Pounds:0.00} lb  ·  {result.Fish} fish"));
 
@@ -1630,7 +1713,15 @@ public class GameHud : MonoBehaviour
 
         CloseAllOverlays();
         lurePopover.Clear();
+        lurePlaceRight = float.NaN;
         lurePopover.Add(HudUi.Muted("Tied on"));
+
+        lureList = new ScrollView(ScrollViewMode.Vertical);
+        lureList.AddToClassList("hud-lure-list");
+        lureList.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
+        lureList.verticalScrollerVisibility = ScrollerVisibility.Auto;
+        lureList.mouseWheelScrollSize = 28f;
+        lurePopover.Add(lureList);
 
         if (tackle != null)
         {
@@ -1638,7 +1729,7 @@ public class GameHud : MonoBehaviour
             {
                 var option = new Button();
                 option.AddToClassList("hud-lure-option");
-                if (lure == tackle.Equipped)
+                if (tackle.IsEquipped(lure))
                     option.AddToClassList("hud-lure-option--on");
                 option.focusable = false;
 
@@ -1646,43 +1737,102 @@ public class GameHud : MonoBehaviour
                 swatch.AddToClassList("hud-lure-swatch");
                 swatch.pickingMode = PickingMode.Ignore;
                 ApplyLureSwatch(swatch, lure.Icon, lure.Color);
+
+                var copy = new VisualElement();
+                copy.AddToClassList("hud-lure-copy");
+                copy.pickingMode = PickingMode.Ignore;
                 var label = new Label(lure.DisplayName);
                 label.AddToClassList("hud-lure-name");
                 label.pickingMode = PickingMode.Ignore;
+                copy.Add(label);
+                var hint = new Label(lure.Hint ?? "");
+                hint.AddToClassList("hud-lure-hint");
+                hint.pickingMode = PickingMode.Ignore;
+                copy.Add(hint);
+
                 option.Add(swatch);
-                option.Add(label);
+                option.Add(copy);
                 LureDefinition chosen = lure;
                 option.clicked += () =>
                 {
                     tackle.Equip(chosen);
                     CloseLurePicker();
                 };
-                lurePopover.Add(option);
+                lureList.Add(option);
             }
         }
 
         lurePopover.style.display = DisplayStyle.Flex;
         popoverCatcher.style.display = DisplayStyle.Flex;
         lurePopover.RegisterCallback<GeometryChangedEvent>(PlaceLurePopover);
+        root.RegisterCallback<GeometryChangedEvent>(PlaceLurePopover);
+        PlaceLurePopover(null);
         HudInput.PopupOpen = false;
     }
 
     void PlaceLurePopover(GeometryChangedEvent _)
     {
-        lurePopover.UnregisterCallback<GeometryChangedEvent>(PlaceLurePopover);
-        if (lureChip == null)
+        if (lurePopover == null || lureChip == null || root == null)
+            return;
+        if (lurePopover.style.display != DisplayStyle.Flex)
             return;
 
         Rect chip = lureChip.worldBound;
         Rect panel = root.worldBound;
-        lurePopover.style.right = panel.xMax - chip.xMax;
-        lurePopover.style.bottom = panel.yMax - chip.yMin + 8f;
+        if (chip.height < 1f || panel.width < 1f)
+            return;
+
+        const float gap = 8f;
+        float right = panel.xMax - chip.xMax;
+        float bottom = panel.yMax - chip.yMin + gap;
+        float width = Mathf.Clamp(panel.width * 0.26f, 240f, 360f);
+        width = Mathf.Min(width, Mathf.Max(180f, panel.width - 36f));
+
+        float topLimit = panel.yMin + 16f;
+        if (mapSonar != null && mapSonar.resolvedStyle.display != DisplayStyle.None && mapSonar.worldBound.height > 1f)
+            topLimit = mapSonar.worldBound.yMax + gap;
+        float maxH = Mathf.Max(120f, chip.yMin - gap - topLimit);
+
+        float pad = lurePopover.resolvedStyle.paddingTop + lurePopover.resolvedStyle.paddingBottom;
+        VisualElement title = lurePopover.Q<Label>(className: "hud-muted");
+        float titleH = 0f;
+        if (title != null)
+            titleH = title.resolvedStyle.height + title.resolvedStyle.marginTop + title.resolvedStyle.marginBottom;
+        float listH = lureList != null ? lureList.contentContainer.layout.height : 0f;
+        bool sized = listH >= 1f;
+        float height = sized ? Mathf.Min(pad + titleH + listH, maxH) : 0f;
+
+        if (Near(lurePlaceRight, right) && Near(lurePlaceBottom, bottom) &&
+            Near(lurePlaceWidth, width) && Near(lurePlaceMaxH, maxH) &&
+            (sized ? Near(lurePlaceHeight, height) : float.IsNaN(lurePlaceHeight)))
+            return;
+
+        lurePlaceRight = right;
+        lurePlaceBottom = bottom;
+        lurePlaceWidth = width;
+        lurePlaceMaxH = maxH;
+        lurePlaceHeight = sized ? height : float.NaN;
+        lurePopover.style.right = right;
+        lurePopover.style.bottom = bottom;
+        lurePopover.style.width = width;
+        lurePopover.style.maxHeight = maxH;
+        if (sized)
+            lurePopover.style.height = height;
+        else
+            lurePopover.style.height = StyleKeyword.Null;
     }
+
+    static bool Near(float a, float b) => Mathf.Abs(a - b) < 0.5f;
 
     void CloseLurePicker()
     {
         if (lurePopover != null)
+        {
+            lurePopover.UnregisterCallback<GeometryChangedEvent>(PlaceLurePopover);
             lurePopover.style.display = DisplayStyle.None;
+        }
+        if (root != null)
+            root.UnregisterCallback<GeometryChangedEvent>(PlaceLurePopover);
         if (popoverCatcher != null && !BagPopoverOpen)
             popoverCatcher.style.display = DisplayStyle.None;
     }
@@ -1775,6 +1925,7 @@ public class GameHud : MonoBehaviour
             mapJournalLayer.style.display = DisplayStyle.None;
             mapJournalLayer.pickingMode = PickingMode.Ignore;
         }
+        CancelNamingSpot();
         if (!CatchSheetOpen)
             HudInput.PopupOpen = false;
     }
@@ -1787,15 +1938,71 @@ public class GameHud : MonoBehaviour
         OpenMapJournal();
     }
 
+    void OnMiniMapSpotClicked(MapSpot spot)
+    {
+        SelectSpot(spot);
+        OpenMapJournal();
+    }
+
     void OnJournalClusterClicked(IReadOnlyList<CatchRecord> cluster)
     {
+        CancelNamingSpot();
         SelectCluster(cluster);
         RefreshMapMarks();
         FillJournalDetail();
     }
 
+    void OnJournalSpotClicked(MapSpot spot)
+    {
+        if (spot == pendingSpot)
+            return;
+        CancelNamingSpot();
+        SelectSpot(spot);
+        RefreshMapMarks();
+        FillJournalDetail();
+    }
+
+    void OnJournalEmptyClicked(Vector3 world)
+    {
+        if (conditions != null && conditions.MapSpots.Count >= MapSpot.MaxCount)
+        {
+            namingSpot = false;
+            selectedSpot = null;
+            FillJournalDetail();
+            return;
+        }
+
+        bool first = !namingSpot;
+        pendingMarkWorld = world;
+        namingSpot = true;
+        selectedSpot = pendingSpot;
+        selectedCluster.Clear();
+        selectedMarked = null;
+        RefreshMapMarks();
+        if (first)
+            FillJournalDetail();
+    }
+
+    void SelectSpot(MapSpot spot)
+    {
+        selectedSpot = spot;
+        selectedCluster.Clear();
+        selectedMarked = null;
+    }
+
+    void CancelNamingSpot()
+    {
+        if (!namingSpot)
+            return;
+        namingSpot = false;
+        if (selectedSpot == pendingSpot)
+            selectedSpot = null;
+        HudInput.Typing = false;
+    }
+
     void SelectCluster(IReadOnlyList<CatchRecord> cluster, CatchRecord prefer = null)
     {
+        selectedSpot = null;
         selectedCluster.Clear();
         if (cluster != null)
         {
@@ -1856,10 +2063,10 @@ public class GameHud : MonoBehaviour
         if (player == null)
             return;
 
-        Transform marker = conditions.OnBoat && conditions.OccupiedBoat != null
-            ? conditions.OccupiedBoat.transform
-            : player;
-        journalMap.SetPlayer(marker.position, marker.eulerAngles.y);
+        if (conditions.OnBoat && conditions.OccupiedBoat != null)
+            journalMap.SetPlayer(conditions.OccupiedBoat.transform.position, conditions.OccupiedBoat.BowYaw);
+        else
+            journalMap.SetPlayer(player.position, player.eulerAngles.y);
     }
 
     void RefreshMapMarks()
@@ -1879,9 +2086,22 @@ public class GameHud : MonoBehaviour
         if (selectedMarked == null && selectedCluster.Count > 0)
             selectedMarked = selectedCluster[0];
 
+        conditions?.CopyMapSpots(spotScratch);
+        if (namingSpot)
+        {
+            pendingSpot.worldPosition = pendingMarkWorld;
+            pendingSpot.name = "";
+            spotScratch.Add(pendingSpot);
+            selectedSpot = pendingSpot;
+        }
+        else if (selectedSpot != null && !spotScratch.Contains(selectedSpot))
+            selectedSpot = null;
+
         mapSonar?.SetMarked(markedScratch, selectedMarked);
         journalMap?.SetMarked(markedScratch, selectedMarked);
-        if (MapJournalOpen)
+        mapSonar?.SetSpots(spotScratch, selectedSpot);
+        journalMap?.SetSpots(spotScratch, selectedSpot);
+        if (MapJournalOpen && !namingSpot)
             FillJournalDetail();
     }
 
@@ -1893,14 +2113,26 @@ public class GameHud : MonoBehaviour
         mapJournalDetail.Clear();
         var header = new VisualElement();
         header.AddToClassList("hud-card-header");
-        int n = markedScratch.Count;
-        header.Add(HudUi.Title(n == 0 ? "Marked fish" : $"Marked fish  ·  {n}"));
+        header.Add(HudUi.Title(JournalTitle()));
         var x = new Button { text = "✕" };
         x.AddToClassList("hud-close");
         x.focusable = false;
         x.clicked += CloseAllOverlays;
         header.Add(x);
         mapJournalDetail.Add(header);
+
+        if (namingSpot)
+        {
+            FillNameSpotForm();
+            return;
+        }
+
+        if (selectedSpot != null)
+        {
+            mapJournalDetail.Add(HudUi.Muted("Named star on the lake."));
+            mapJournalDetail.Add(HudUi.TextButton("Remove", RemoveSelectedSpot));
+            return;
+        }
 
         if (selectedCluster.Count > 1)
         {
@@ -1919,15 +2151,86 @@ public class GameHud : MonoBehaviour
 
         if (selectedMarked == null)
         {
+            int spots = conditions != null ? conditions.MapSpots.Count : 0;
+            if (spots >= MapSpot.MaxCount)
+                mapJournalDetail.Add(HudUi.Muted("Remove a star to pin another."));
+            else
+                mapJournalDetail.Add(HudUi.Muted("Click the map to pin a named star."));
             mapJournalDetail.Add(HudUi.Muted(
-                n == 0
-                    ? "Land a bass and tap Mark fish to pin it here."
-                    : "Scroll to zoom, drag to pan. Click a pin for the catch."));
+                markedScratch.Count == 0
+                    ? "Land a bass and tap Mark fish to pin a catch."
+                    : "Click a pin for the catch."));
             return;
         }
 
         FillCatchFacts(mapJournalDetail, selectedMarked);
         AddRemovePinButton(mapJournalDetail);
+    }
+
+    string JournalTitle()
+    {
+        if (namingSpot)
+            return "Name this spot";
+        if (selectedSpot != null)
+            return selectedSpot.name;
+
+        int n = markedScratch.Count + (conditions != null ? conditions.MapSpots.Count : 0);
+        return n == 0 ? "Marks" : $"Marks  ·  {n}";
+    }
+
+    void FillNameSpotForm()
+    {
+        mapJournalDetail.Add(HudUi.Muted("What should this star be called?"));
+
+        var error = HudUi.Muted("Give the spot a name.");
+        error.style.display = DisplayStyle.None;
+
+        TextField field = null;
+        void Submit()
+        {
+            if (ConfirmNamedSpot(field != null ? field.value : ""))
+                return;
+            error.style.display = DisplayStyle.Flex;
+        }
+
+        field = HudUi.NameField("", MapSpot.MaxNameLength, Submit);
+        mapJournalDetail.Add(field);
+        mapJournalDetail.Add(error);
+
+        var actions = new VisualElement();
+        actions.AddToClassList("hud-form-actions");
+        actions.Add(HudUi.TextButton("Cancel", () =>
+        {
+            CancelNamingSpot();
+            RefreshMapMarks();
+            FillJournalDetail();
+        }));
+        actions.Add(HudUi.TextButton("Pin", Submit, true));
+        mapJournalDetail.Add(actions);
+    }
+
+    bool ConfirmNamedSpot(string name)
+    {
+        if (MapSpot.CleanName(name).Length == 0)
+            return false;
+
+        namingSpot = false;
+        HudInput.Typing = false;
+        MapSpot spot = conditions != null ? conditions.AddMapSpot(name, pendingMarkWorld) : null;
+        selectedSpot = spot;
+        SaveService.Instance?.Save();
+        RefreshMapMarks();
+        FillJournalDetail();
+        return true;
+    }
+
+    void RemoveSelectedSpot()
+    {
+        if (selectedSpot == null || selectedSpot == pendingSpot)
+            return;
+        conditions?.RemoveMapSpot(selectedSpot);
+        selectedSpot = null;
+        SaveService.Instance?.Save();
     }
 
     void AddRemovePinButton(VisualElement parent)

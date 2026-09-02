@@ -71,8 +71,7 @@ MonoBehaviour:
   cellSize: 24
   activeRadius: 72
   despawnRadius: 96
-  maxFish: 24
-  maxFishPerCell: 3
+  maxFish: 28;
   maxCellActivationsPerUpdate: 6
   updateInterval: 0.15
   prewarmPerSpecies: 8
@@ -80,3 +79,4 @@ MonoBehaviour:
   visualScaleMultiplier: 2.3
   visibilityScale: 1
   viewDistance: 48
+  debugShowFish: 1

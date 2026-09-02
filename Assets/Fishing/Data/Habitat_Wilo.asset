@@ -18,7 +18,7 @@ MonoBehaviour:
   openWaterScatter: 0.055
   depthWeight: 1
   dropoffWeight: 0.55
-  rockWeight: 1.87
+  rockWeight: 1.96
   woodWeight: 2.4
   vegetationWeight: 1.15
   structureSoftness: 0.38
@@ -43,8 +43,11 @@ MonoBehaviour:
   sizeShallowFeet: 5
   sizeDeepFeet: 36
   sizeBlend: 0.9
-  rockPeakDepthFeet: 16
-  rockPeakWidthFeet: 12
+  trophyTailBlend: 0
+  qualityChance: 0.13
+  trophyChance: 0.08
+  rockPeakDepthFeet: 20
+  rockPeakWidthFeet: 16
   rockTrophyDepthFeet: 42
   rockOffBand: 0.3
   dropoffSampleMeters: 8
@@ -71,7 +74,7 @@ MonoBehaviour:
     trophyPounds: 12
     shallowSizeT: 0.08
     deepSizeT: 0.2
-    woodSizeT: 0.33
+    woodSizeT: 0.28
     woodSizeBoost: 0
     rockSizeBoost: 0.36
     rockDepthEven: 0.35
@@ -91,8 +94,8 @@ MonoBehaviour:
     minPounds: 0.5
     trophyPounds: 8
     shallowSizeT: 0.12
-    deepSizeT: 0.36
+    deepSizeT: 0.3
     woodSizeT: 0
     woodSizeBoost: 0
-    rockSizeBoost: 0.46
+    rockSizeBoost: 0.4
     rockDepthEven: 0.75

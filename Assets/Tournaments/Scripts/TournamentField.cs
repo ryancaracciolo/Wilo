@@ -59,6 +59,24 @@ public static class TournamentField
         into.Sort(CompareHeaviest);
     }
 
+    /// <summary>
+    /// Rival names for this occurrence, same roster walk the standings use.
+    /// Decorative boats can label themselves from this without rolling bags.
+    /// </summary>
+    public static void CopyNames(TournamentOccurrence occurrence, List<string> into)
+    {
+        into.Clear();
+        if (!occurrence.IsValid)
+            return;
+
+        TournamentDefinition def = occurrence.Definition;
+        var rng = new System.Random(Seed(def.Id, occurrence.DayIndex));
+        int size = Mathf.Max(1, def.FieldSize);
+        int offset = rng.Next(Names.Length);
+        for (int i = 0; i < size; i++)
+            into.Add(Names[(offset + i * 3) % Names.Length]);
+    }
+
     /// <summary>Skewed toward the middle of the pack, with a thin tail of standout days.</summary>
     static float Skill(System.Random rng)
     {

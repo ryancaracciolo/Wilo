@@ -20,6 +20,8 @@ public class BoatMotor : MonoBehaviour
     [Header("Lake")]
     [SerializeField] Transform waterSurface;
     [SerializeField] Transform seat;
+    [SerializeField] Transform helm;
+    [SerializeField] Transform tiller;
     [Tooltip("Visual mesh lives under this transform so the dummy boat can be swapped later.")]
     [SerializeField] Transform visualRoot;
     [SerializeField] float bobAmplitude = 0.05f;
@@ -34,11 +36,30 @@ public class BoatMotor : MonoBehaviour
     InputAction moveAction;
     bool occupied;
     bool controlsLocked;
+    bool aiControlled;
+    Vector2 aiInput;
     float wakeTraveled;
 
+    /// <summary>False on decorative field boats so the player cannot board them.</summary>
+    public bool Boardable { get; private set; } = true;
+
     public bool IsOccupied => occupied;
+    public bool IsAiControlled => aiControlled;
     public Transform Seat => seat;
+    public Transform Helm => helm;
+    public Transform Tiller => tiller;
+    public bool HasDriveInput
+    {
+        get
+        {
+            if (!occupied || controlsLocked || HudInput.PopupOpen)
+                return false;
+            return ReadMove().sqrMagnitude > 0.04f;
+        }
+    }
     public float Speed => currentSpeed;
+    /// <summary>Yaw of the bow. Drive and the mesh face opposite the transform.</summary>
+    public float BowYaw => transform.eulerAngles.y + 180f;
     public float WaterHeight => hasWaterHeight ? waterHeight : transform.position.y;
     public bool ControlsLocked
     {
@@ -56,6 +77,16 @@ public class BoatMotor : MonoBehaviour
         seat = value;
     }
 
+    public void SetHelm(Transform value)
+    {
+        helm = value;
+    }
+
+    public void SetTiller(Transform value)
+    {
+        tiller = value;
+    }
+
     public void SetVisualRoot(Transform value)
     {
         visualRoot = value;
@@ -64,8 +95,32 @@ public class BoatMotor : MonoBehaviour
     public void SetOccupied(bool value)
     {
         occupied = value;
-        if (!occupied)
+        if (!occupied && !aiControlled)
             currentSpeed = 0f;
+    }
+
+    public void SetBoardable(bool value)
+    {
+        Boardable = value;
+    }
+
+    /// <summary>NPC throttle/steer. Cleared with <see cref="ClearAiDrive"/>.</summary>
+    public void SetAiDrive(Vector2 throttleSteer)
+    {
+        aiControlled = true;
+        aiInput = Vector2.ClampMagnitude(throttleSteer, 1f);
+    }
+
+    public void ClearAiDrive()
+    {
+        aiControlled = false;
+        aiInput = Vector2.zero;
+        currentSpeed = 0f;
+    }
+
+    public bool WouldBlock(Vector3 nextPosition)
+    {
+        return IsBlocked(nextPosition);
     }
 
     void OnEnable()
@@ -79,10 +134,21 @@ public class BoatMotor : MonoBehaviour
     void Update()
     {
         SnapToWater();
-        if (!occupied || controlsLocked || HudInput.PopupOpen)
+        if (controlsLocked)
             return;
 
-        Vector2 input = moveAction != null ? moveAction.ReadValue<Vector2>() : Vector2.zero;
+        Vector2 input;
+        if (aiControlled)
+        {
+            input = aiInput;
+        }
+        else
+        {
+            if (!occupied || HudInput.PopupOpen)
+                return;
+            input = ReadMove();
+        }
+
         float throttle = Mathf.Clamp(input.y, -0.55f, 1f);
         float steer = input.x;
 
@@ -93,13 +159,35 @@ public class BoatMotor : MonoBehaviour
         float speedFactor = 0.4f + 0.6f * Mathf.Clamp01(Mathf.Abs(currentSpeed) / maxSpeed);
         transform.Rotate(0f, steer * turnSpeed * speedFactor * Time.deltaTime, 0f);
 
-        Vector3 motion = transform.forward * (currentSpeed * Time.deltaTime);
+        Vector3 motion = -transform.forward * (currentSpeed * Time.deltaTime);
         Vector3 next = transform.position + motion;
         if (!IsBlocked(next))
             transform.position = next;
 
         SnapToWater();
         EmitWake(Mathf.Abs(currentSpeed) * Time.deltaTime);
+    }
+
+    Vector2 ReadMove()
+    {
+        var keyboard = Keyboard.current;
+        if (keyboard != null && !HudInput.Typing)
+        {
+            Vector2 wasd = Vector2.zero;
+            if (keyboard.wKey.isPressed)
+                wasd.y += 1f;
+            if (keyboard.sKey.isPressed)
+                wasd.y -= 1f;
+            if (keyboard.aKey.isPressed)
+                wasd.x -= 1f;
+            if (keyboard.dKey.isPressed)
+                wasd.x += 1f;
+            if (wasd.sqrMagnitude > 0.0001f)
+                return Vector2.ClampMagnitude(wasd, 1f);
+            return Vector2.zero;
+        }
+
+        return moveAction != null ? moveAction.ReadValue<Vector2>() : Vector2.zero;
     }
 
     void SnapToWater()
@@ -130,11 +218,11 @@ public class BoatMotor : MonoBehaviour
         wakeTraveled = 0f;
         float speedBlend = Mathf.Clamp01(Mathf.Abs(currentSpeed) / maxSpeed);
         float width = Mathf.Lerp(0.35f, 0.7f, speedBlend);
-        Vector3 stern = transform.position - transform.forward * 1.7f;
+        Vector3 stern = transform.position + transform.forward * 1.7f;
         Vector3 side = transform.right * width;
         WaterRipples.Emit(stern + side, WaterRippleKind.Boat);
         WaterRipples.Emit(stern - side, WaterRippleKind.Boat);
-        WaterRipples.Emit(stern - transform.forward * 0.55f, WaterRippleKind.Boat);
+        WaterRipples.Emit(stern + transform.forward * 0.55f, WaterRippleKind.Boat);
     }
 
     bool IsBlocked(Vector3 nextPosition)
@@ -149,7 +237,11 @@ public class BoatMotor : MonoBehaviour
         if (distance < 0.0001f)
             return false;
 
-        if (!Physics.SphereCast(origin, hullRadius, delta / distance, out RaycastHit hit, distance, ~0, QueryTriggerInteraction.Ignore))
+        int mask = ~0;
+        int structure = WorldConditions.StructureLayer;
+        if (structure >= 0)
+            mask &= ~(1 << structure);
+        if (!Physics.SphereCast(origin, hullRadius, delta / distance, out RaycastHit hit, distance, mask, QueryTriggerInteraction.Ignore))
             return false;
 
         if (hit.transform.root == transform)

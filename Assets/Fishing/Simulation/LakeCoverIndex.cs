@@ -172,8 +172,24 @@ public sealed class LakeCoverIndex
         out float px,
         out float pz)
     {
+        return TryClosestInRect(x, z, xMin, zMin, xMax, zMax, kind, out px, out pz, out _);
+    }
+
+    public bool TryClosestInRect(
+        float x,
+        float z,
+        float xMin,
+        float zMin,
+        float xMax,
+        float zMax,
+        CoverKind kind,
+        out float px,
+        out float pz,
+        out float radius)
+    {
         px = x;
         pz = z;
+        radius = 0f;
         float best = float.MaxValue;
         bool found = false;
         seen.Clear();
@@ -210,6 +226,7 @@ public sealed class LakeCoverIndex
                     best = d2;
                     px = p.X;
                     pz = p.Z;
+                    radius = p.Radius;
                     found = true;
                 }
             }

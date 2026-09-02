@@ -8,11 +8,15 @@ public class LakeMapElement : VisualElement
     readonly VisualElement mapImage;
     readonly VisualElement overlay;
     readonly List<CatchRecord> marked = new List<CatchRecord>();
+    readonly List<MapSpot> spots = new List<MapSpot>();
     Texture2D mapTexture;
     Vector2 playerUv = new Vector2(0.5f, 0.5f);
     float playerYaw;
     bool hasPlayer;
+    Vector2 campUv;
+    bool hasCamp;
     CatchRecord selected;
+    MapSpot selectedSpot;
     float pinScale = 1f;
     bool panZoom;
     float viewZoom = 1f;
@@ -25,6 +29,8 @@ public class LakeMapElement : VisualElement
 
     public event Action ExpandRequested;
     public event Action<IReadOnlyList<CatchRecord>> ClusterClicked;
+    public event Action<MapSpot> SpotClicked;
+    public event Action<Vector3> EmptyClicked;
 
     readonly List<MarkCluster> clusters = new List<MarkCluster>();
 
@@ -114,6 +120,7 @@ public class LakeMapElement : VisualElement
         mapTexture.SetPixels32(pixels);
         mapTexture.Apply(false, false);
         mapImage.style.backgroundImage = new StyleBackground(mapTexture);
+        ResolveCamp();
     }
 
     public void SetPlayer(Vector3 world, float yawDegrees)
@@ -134,6 +141,15 @@ public class LakeMapElement : VisualElement
         overlay.MarkDirtyRepaint();
     }
 
+    public void SetSpots(List<MapSpot> records, MapSpot selectedRecord)
+    {
+        spots.Clear();
+        if (records != null)
+            spots.AddRange(records);
+        selectedSpot = selectedRecord;
+        overlay.MarkDirtyRepaint();
+    }
+
     public static bool TryWorldToUv(Vector3 world, out Vector2 uv)
     {
         uv = default;
@@ -146,6 +162,23 @@ public class LakeMapElement : VisualElement
         uv = new Vector2(
             Mathf.InverseLerp(origin.x, origin.x + size.x, world.x),
             Mathf.InverseLerp(origin.z, origin.z + size.z, world.z));
+        return true;
+    }
+
+    public static bool TryUvToWorld(Vector2 uv, out Vector3 world)
+    {
+        world = default;
+        Terrain terrain = Terrain.activeTerrain;
+        if (terrain == null || terrain.terrainData == null)
+            return false;
+
+        Vector3 origin = terrain.transform.position;
+        Vector3 size = terrain.terrainData.size;
+        float x = Mathf.Lerp(origin.x, origin.x + size.x, uv.x);
+        float z = Mathf.Lerp(origin.z, origin.z + size.z, uv.y);
+        var sample = new Vector3(x, 0f, z);
+        float y = terrain.SampleHeight(sample) + origin.y;
+        world = new Vector3(x, y, z);
         return true;
     }
 
@@ -229,7 +262,7 @@ public class LakeMapElement : VisualElement
         EndDrag(evt.pointerId);
 
         if (panZoom && !moved)
-            TryClickCluster(local);
+            HandleMapClick(local);
 
         evt.StopPropagation();
     }
@@ -257,7 +290,7 @@ public class LakeMapElement : VisualElement
             return;
         }
 
-        if (!TryClickCluster(this.WorldToLocal(evt.position)))
+        if (!HandleMapClick(this.WorldToLocal(evt.position)))
             ExpandRequested?.Invoke();
         evt.StopPropagation();
     }
@@ -335,6 +368,20 @@ public class LakeMapElement : VisualElement
         element.style.height = height;
     }
 
+    bool HandleMapClick(Vector2 widgetLocal)
+    {
+        if (TryClickCluster(widgetLocal) || TryClickSpot(widgetLocal))
+            return true;
+
+        if (panZoom && TryLocalToWorld(widgetLocal, out Vector3 world))
+        {
+            EmptyClicked?.Invoke(world);
+            return true;
+        }
+
+        return false;
+    }
+
     bool TryClickCluster(Vector2 widgetLocal)
     {
         BuildClusters(contentRect, overlaySpace: false);
@@ -343,6 +390,44 @@ public class LakeMapElement : VisualElement
             return false;
         ClusterClicked?.Invoke(hit.Records);
         return true;
+    }
+
+    bool TryClickSpot(Vector2 widgetLocal)
+    {
+        MapSpot hit = HitSpot(widgetLocal, contentRect);
+        if (hit == null)
+            return false;
+        SpotClicked?.Invoke(hit);
+        return true;
+    }
+
+    MapSpot HitSpot(Vector2 widgetLocal, Rect rect)
+    {
+        float best = 14f * pinScale;
+        MapSpot found = null;
+        for (int i = 0; i < spots.Count; i++)
+        {
+            MapSpot spot = spots[i];
+            if (spot == null || !TryWorldToUv(spot.worldPosition, out Vector2 uv))
+                continue;
+
+            float dist = Vector2.Distance(widgetLocal, UvToWidget(uv, rect));
+            if (dist >= best)
+                continue;
+            best = dist;
+            found = spot;
+        }
+
+        return found;
+    }
+
+    bool TryLocalToWorld(Vector2 widgetLocal, out Vector3 world)
+    {
+        world = default;
+        Rect rect = contentRect;
+        if (rect.width < 2f || rect.height < 2f)
+            return false;
+        return TryUvToWorld(WidgetToUv(widgetLocal, rect), out world);
     }
 
     MarkCluster HitCluster(Vector2 widgetLocal)
@@ -412,13 +497,35 @@ public class LakeMapElement : VisualElement
         if (rect.width < 2f || rect.height < 2f)
             return;
 
+        if (!hasCamp)
+            ResolveCamp();
+
         BuildClusters(rect, overlaySpace: true);
         var p = ctx.painter2D;
+        if (hasCamp)
+            DrawNamedStar(ctx, p, UvToOverlay(campUv, rect), "camp", false);
+
+        for (int i = 0; i < spots.Count; i++)
+        {
+            MapSpot spot = spots[i];
+            if (spot == null || !TryWorldToUv(spot.worldPosition, out Vector2 uv))
+                continue;
+            DrawNamedStar(ctx, p, UvToOverlay(uv, rect), spot.name, spot == selectedSpot);
+        }
+
         for (int i = 0; i < clusters.Count; i++)
             DrawCluster(ctx, p, clusters[i]);
 
         if (hasPlayer)
             DrawPlayer(p, UvToOverlay(playerUv, rect));
+    }
+
+    void ResolveCamp()
+    {
+        var site = UnityEngine.Object.FindFirstObjectByType<TournamentSite>();
+        if (site == null || !TryWorldToUv(site.transform.position, out campUv))
+            return;
+        hasCamp = true;
     }
 
     static Vector2 UvToOverlay(Vector2 uv, Rect rect)
@@ -520,6 +627,54 @@ public class LakeMapElement : VisualElement
 
             return best;
         }
+    }
+
+    void DrawNamedStar(MeshGenerationContext ctx, Painter2D p, Vector2 pos, string label, bool on)
+    {
+        float size = (on ? 6.2f : 5.2f) * pinScale;
+        DrawStar(p, pos, size + 1.6f * pinScale, Color.white);
+        DrawStar(p, pos, size, HudTheme.Gold);
+
+        if (on)
+        {
+            p.strokeColor = HudTheme.TealDeep;
+            p.lineWidth = 2f * pinScale;
+            p.BeginPath();
+            p.Arc(pos, size + 4.2f * pinScale, 0f, 360f);
+            p.Stroke();
+        }
+
+        if (string.IsNullOrWhiteSpace(label))
+            return;
+
+        float font = 10f * pinScale;
+        ctx.DrawText(
+            label,
+            pos + new Vector2(6.4f * pinScale, -5.6f * pinScale),
+            font,
+            HudTheme.Ink,
+            null);
+    }
+
+    static void DrawStar(Painter2D p, Vector2 center, float radius, Color fill)
+    {
+        const int points = 5;
+        float inner = radius * 0.4f;
+        p.fillColor = fill;
+        p.BeginPath();
+        for (int i = 0; i < points * 2; i++)
+        {
+            float r = (i & 1) == 0 ? radius : inner;
+            float a = -Mathf.PI * 0.5f + i * Mathf.PI / points;
+            Vector2 pt = center + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * r;
+            if (i == 0)
+                p.MoveTo(pt);
+            else
+                p.LineTo(pt);
+        }
+
+        p.ClosePath();
+        p.Fill();
     }
 
     void DrawPlayer(Painter2D p, Vector2 pos)

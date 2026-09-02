@@ -59,11 +59,13 @@ Shader "Wilo/Dock Wood"
                 float3 positionWS : TEXCOORD0;
                 float3 normalWS : TEXCOORD1;
                 float fogCoord : TEXCOORD2;
+                float3 positionOS : TEXCOORD3;
             };
 
             Varyings vert(Attributes IN)
             {
                 Varyings OUT;
+                OUT.positionOS = IN.positionOS.xyz;
                 OUT.positionWS = TransformObjectToWorld(IN.positionOS.xyz);
                 OUT.positionCS = TransformWorldToHClip(OUT.positionWS);
                 OUT.normalWS = TransformObjectToWorldNormal(IN.normalOS);
@@ -77,11 +79,9 @@ Shader "Wilo/Dock Wood"
                 float3 axisZ = float3(unity_ObjectToWorld._m02, unity_ObjectToWorld._m12, unity_ObjectToWorld._m22);
                 float scaleX = length(axisX);
                 float scaleZ = length(axisZ);
-                float3 alongAxis = scaleX >= scaleZ ? axisX / max(scaleX, 1e-5) : axisZ / max(scaleZ, 1e-5);
-                float3 acrossAxis = scaleX >= scaleZ ? axisZ / max(scaleZ, 1e-5) : axisX / max(scaleX, 1e-5);
-
-                float along = dot(IN.positionWS, alongAxis);
-                float across = dot(IN.positionWS, acrossAxis);
+                float3 posM = IN.positionOS * float3(scaleX, 1.0, scaleZ);
+                float along = scaleX >= scaleZ ? posM.x : posM.z;
+                float across = scaleX >= scaleZ ? posM.z : posM.x;
                 float2 uv = float2(across / max(_GrainRepeat, 0.1), along / max(_PlankRepeat, 0.1));
                 half3 albedo = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, uv).rgb * _BaseColor.rgb;
 

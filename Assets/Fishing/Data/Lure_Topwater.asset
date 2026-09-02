@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::LureDefinition
   Id: topwater
   DisplayName: Topwater
-  Hint: Never sinks. Loud on a calm surface at first and last light.
+  Hint: Pads and grass. Best at first light and after dark.
   Color: {r: 0.9, g: 0.42, b: 0.36, a: 1}
   Icon: {fileID: 21300000, guid: 88639d41f57964b519a1a9c1af6decda, type: 3}
   Kind: 4

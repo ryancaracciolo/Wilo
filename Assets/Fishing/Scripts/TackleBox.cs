@@ -19,10 +19,10 @@ public class TackleBox : MonoBehaviour
     void Awake()
     {
         ApplyFrom(SaveService.Instance);
-        if (lures.Count == 0)
-            AddStarterLures();
+        EnsureStarterLures();
         if (equipped == null && lures.Count > 0)
             equipped = lures[0];
+        Changed?.Invoke();
     }
 
     void ApplyFrom(SaveService save)
@@ -71,7 +71,7 @@ public class TackleBox : MonoBehaviour
 
     public void Equip(LureDefinition lure)
     {
-        if (lure == null || lure == equipped)
+        if (lure == null || IsEquipped(lure))
             return;
         if (!lures.Contains(lure))
             lures.Add(lure);
@@ -79,7 +79,16 @@ public class TackleBox : MonoBehaviour
         Changed?.Invoke();
     }
 
-    void AddStarterLures()
+    public bool IsEquipped(LureDefinition lure)
+    {
+        if (lure == null || equipped == null)
+            return false;
+        if (lure == equipped)
+            return true;
+        return !string.IsNullOrEmpty(lure.Id) && lure.Id == equipped.Id;
+    }
+
+    void EnsureStarterLures()
     {
         ContentRegistry registry = ContentRegistry.Instance;
         if (registry == null)
@@ -91,8 +100,9 @@ public class TackleBox : MonoBehaviour
         IReadOnlyList<LureDefinition> starters = registry.StarterLures;
         for (int i = 0; i < starters.Count; i++)
         {
-            if (starters[i] != null)
-                lures.Add(starters[i]);
+            LureDefinition lure = starters[i];
+            if (lure != null && !lures.Contains(lure))
+                lures.Add(lure);
         }
     }
 }

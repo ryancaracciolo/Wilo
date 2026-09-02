@@ -9,7 +9,7 @@ using UnityEngine.InputSystem;
 [DefaultExecutionOrder(-20)]
 public class PlayerFishing : MonoBehaviour
 {
-    enum Phase
+    public enum Phase
     {
         Idle,
         Aiming,
@@ -40,22 +40,75 @@ public class PlayerFishing : MonoBehaviour
     /// enough that a tap of the reel reads as a pop rather than a long climb.
     /// </summary>
     const float RideTrackSpeed = 6f;
+    const float FlingDuration = 0.42f;
+    const float FlingRelease = 0.58f;
 
     /// <summary>Metres of bottom the lure feels out ahead of itself.</summary>
-    const float BottomLookahead = 1.1f;
+    const float BottomLookahead = 0.35f;
 
     /// <summary>How fast the lure rides up onto something it is about to reach.</summary>
     const float BottomClimbSpeed = 6f;
 
+    /// <summary>How fat the lure is when it ticks a rock or stump.</summary>
+    const float LureRadius = 0.1f;
+    static readonly Collider[] CoverOverlap = new Collider[8];
+    static readonly RaycastHit[] CoverHits = new RaycastHit[8];
+
     [Header("Lure")]
     [SerializeField] float lureClearance = 0.1f;
     [SerializeField] Color lineColor = new Color(0.93f, 0.9f, 0.82f, 0.9f);
+
+    [Header("Rod")]
+    [SerializeField] GameObject polePrefab;
+    [SerializeField] float poleScale = 0.48f;
+    [SerializeField] float poleThickness = 3.6f;
+    [SerializeField] Vector3 poleHoldOffset = new Vector3(0.18f, 0.4f, 0.08f);
+    [SerializeField] Vector3 poleCastHoldOffset = new Vector3(0.24f, 0.42f, -0.05f);
+    [SerializeField] float polePitch = 14f;
+    [SerializeField] float poleCastPitch = 6f;
+
+    /// <summary>
+    /// Where the blank points when the cast is loaded, as weights on the aim
+    /// frame: x leans outboard, y lifts, z rocks back. Keep this mostly
+    /// horizontal — the brim is wider than the arms can reach, so a high
+    /// sweep goes through the hat.
+    /// </summary>
+    [SerializeField] Vector3 poleCastLean = new Vector3(0.95f, 0.12f, 0.5f);
+
+    [Header("Catch")]
+    [SerializeField] Vector3 catchHoldLocal = new Vector3(-0.24f, 0.74f, 0.48f);
+
+    /// <summary>Lower lip grip for two-hand holds so a long bass clears the hat.</summary>
+    [SerializeField] Vector3 catchHoldTwoHandLocal = new Vector3(-0.18f, 0.54f, 0.28f);
+
+    /// <summary>
+    /// Head-to-tail in player space for two-hand holds. Keep Z near 0 so the
+    /// tail sits as far out from the chest as the head.
+    /// </summary>
+    [SerializeField] Vector3 catchHangLocal = new Vector3(0.72f, -0.52f, 0f);
+
+    [SerializeField, Range(0.3f, 0.6f)]
+    float catchLipAlong = 0.48f;
+    [SerializeField, Range(0f, 0.08f)]
+    float catchLipBelly = 0.02f;
+    [SerializeField, Range(0f, 0.12f)]
+    float catchPinchAlong = 0.03f;
+    [SerializeField, Range(0f, 0.08f)]
+    float catchPinchOut = 0.01f;
+    [SerializeField, Range(0.2f, 0.9f)]
+    float catchSupportAlong = 0.52f;
+    [SerializeField, Range(0f, 0.22f)]
+    float catchSupportOut = 0.11f;
+    [SerializeField, Range(0f, 0.14f)]
+    float catchSupportDown = 0.06f;
 
     [Header("Reticle")]
     [SerializeField] Color liveColor = new Color(0.96f, 0.97f, 1f, 1f);
     [SerializeField] Color invalidColor = new Color(1f, 0.58f, 0.58f, 1f);
 
     public bool IsFishing => phase != Phase.Idle;
+    public bool ShowingCatch => phase == Phase.ShowingCatch;
+    public FishAgent ShownCatch => phase == Phase.ShowingCatch ? hooked : null;
     public bool CapturesArrowKeys => phase == Phase.Aiming;
     public FishFight Fight { get; private set; }
     public event System.Action Escaped;
@@ -87,6 +140,8 @@ public class PlayerFishing : MonoBehaviour
     LurePlaceholder lureVisual;
     LureDefinition shownLure;
     LineRenderer line;
+    Vector3[] lineBuffer;
+    FishingPole pole;
     CastMarker liveMarker;
     Vector3 flyStart;
     Vector3 flyEnd;
@@ -108,6 +163,12 @@ public class PlayerFishing : MonoBehaviour
     int ignoreCastFrame = -1;
     Quaternion catchFacingSaved;
     bool catchFacingStored;
+    float flingTime;
+    bool lureOnTip;
+    float lastFishY;
+    float fightSway;
+    float fightSwayVel;
+    float catchHoldWeight;
 
     /// <summary>True while a cast lure is riding in the water column.</summary>
     public bool LureInWater { get; private set; }
@@ -124,6 +185,11 @@ public class PlayerFishing : MonoBehaviour
         boatInteractor = GetComponent<PlayerBoatInteractor>();
         progress = GetComponent<PlayerProgress>();
         tackle = GetComponent<TackleBox>();
+    }
+
+    void Start()
+    {
+        HidePole();
     }
 
     void OnEnable()
@@ -181,14 +247,16 @@ public class PlayerFishing : MonoBehaviour
         }
 
         UpdateLure();
-        UpdateLine();
     }
 
     void LateUpdate()
     {
-        if (!HudInput.AteWorldClick)
-            return;
-        CancelCastClick();
+        if (HudInput.AteWorldClick)
+            CancelCastClick();
+
+        TickPole();
+        ReleaseLureFromTip();
+        UpdateLine();
     }
 
     bool WasCastPressed()
@@ -418,12 +486,11 @@ public class PlayerFishing : MonoBehaviour
         HideMarkers();
         EnsureLure();
         ApplyEquippedLure();
-        flyStart = transform.TransformPoint(castOriginOffset);
-        flyEnd = pendingLanding;
+        flingTime = 0f;
+        lureOnTip = true;
         flyTime = 0f;
         lureObject.SetActive(true);
-        lureObject.transform.position = flyStart;
-        lureObject.transform.rotation = Quaternion.LookRotation(Flatten(flyEnd - flyStart), Vector3.up);
+        lureObject.transform.rotation = Quaternion.LookRotation(Flatten(pendingLanding - transform.position), Vector3.up);
         phase = Phase.Flying;
     }
 
@@ -446,6 +513,13 @@ public class PlayerFishing : MonoBehaviour
 
     void TickFly()
     {
+        if (lureOnTip)
+        {
+            if (lureObject != null)
+                lureObject.transform.position = RodTip();
+            return;
+        }
+
         flyTime += Time.deltaTime;
         float t = Mathf.Clamp01(flyTime / flyDuration);
         float eased = t * t * (3f - 2f * t);
@@ -505,13 +579,17 @@ public class PlayerFishing : MonoBehaviour
             return;
         }
 
-        Vector3 rod = transform.TransformPoint(castOriginOffset);
+        Vector3 rod = RodTip();
         Vector3 previous = lureObject.transform.position;
 
         Vector3 planar = new Vector3(previous.x, 0f, previous.z);
         Vector3 planarTarget = new Vector3(rod.x, 0f, rod.z);
         Vector3 travel = planarTarget - planar;
         planar = Vector3.MoveTowards(planar, planarTarget, CurrentRetrieveSpeed() * Time.deltaTime);
+        planar = SlideOffCover(previous, planar);
+        Vector3 slid = planar - new Vector3(previous.x, 0f, previous.z);
+        if (slid.sqrMagnitude > 0.0001f)
+            travel = slid;
 
         float remaining = Vector3.Distance(planar, planarTarget);
         float liftT = 1f - Mathf.Clamp01(remaining / retrieveLiftDistance);
@@ -573,6 +651,9 @@ public class PlayerFishing : MonoBehaviour
             lake.Lure.Clear();
         fight = new FishFight();
         fight.Begin(fish.Size.Pounds);
+        lastFishY = fight.FishY;
+        fightSway = 0f;
+        fightSwayVel = 0f;
         Fight = fight;
         retrieveAllTheWay = false;
         phase = Phase.Fighting;
@@ -709,7 +790,7 @@ public class PlayerFishing : MonoBehaviour
         SaveCatchFacing();
         FaceCatchCamera(0f);
         progress?.RecordCatch(record);
-        fish.PresentCatch(transform);
+        fish.PresentCatch(transform, CatchHoldPoint());
     }
 
     void SaveCatchFacing()
@@ -793,6 +874,12 @@ public class PlayerFishing : MonoBehaviour
         retrieveAllTheWay = false;
         phase = Phase.Idle;
         HideMarkers();
+        lureOnTip = false;
+        HidePole();
+        flingTime = 0f;
+        fightSway = 0f;
+        fightSwayVel = 0f;
+        catchHoldWeight = 0f;
         if (lureObject != null)
             lureObject.SetActive(false);
         SetFishingLocked(false);
@@ -822,71 +909,316 @@ public class PlayerFishing : MonoBehaviour
             boat.ControlsLocked = locked;
     }
 
+    void TickPole()
+    {
+        bool showing = phase == Phase.ShowingCatch;
+        bool held = phase != Phase.Idle && !showing;
+        catchHoldWeight = Mathf.MoveTowards(catchHoldWeight, showing ? 1f : 0f, Time.deltaTime * 8f);
+
+        if (!held)
+            HidePole();
+        else
+        {
+            EnsurePole();
+            FaceFishingTarget(FacePoint());
+            if (phase == Phase.Flying)
+                flingTime += Time.deltaTime;
+
+            if (pole != null)
+            {
+                AdvanceFightSway(out float sway, out float load);
+                float stage = Mathf.Clamp01(flingTime / FlingDuration);
+                pole.Tick(true, BuildPoleMotion(phase, PoleAimPoint(), stage, sway, load, IsFightHeld()));
+            }
+        }
+
+        if (showing || catchHoldWeight > 0.01f)
+        {
+            if (pole == null)
+                EnsurePole();
+            PoseCatchHold();
+        }
+    }
+
+    Vector3 CatchHoldPoint()
+    {
+        bool twoHand = hooked != null && hooked.WantsTwoHandHold;
+        return transform.TransformPoint(twoHand ? catchHoldTwoHandLocal : catchHoldLocal);
+    }
+
+    Vector3 CatchHangDirection()
+    {
+        if (hooked == null || !hooked.WantsTwoHandHold)
+            return Vector3.down;
+
+        Vector3 local = catchHangLocal.sqrMagnitude > 0.01f
+            ? catchHangLocal
+            : new Vector3(0.72f, -0.52f, 0f);
+        Vector3 world = transform.TransformDirection(local);
+        return world.sqrMagnitude > 0.0001f ? world.normalized : Vector3.down;
+    }
+
+    void PoseCatchHold()
+    {
+        Vector3 hang = CatchHangDirection();
+        Vector3 hold = CatchHoldPoint();
+        Vector3 lip = hold;
+        if (pole != null)
+            lip = pole.PoseCatchHold(hold, hang, catchHoldWeight, catchPinchAlong, catchPinchOut);
+        if (hooked == null)
+            return;
+
+        hooked.ApplyCatchFit(catchLipAlong, catchLipBelly, catchSupportAlong, catchSupportOut, catchSupportDown);
+        hooked.HangFromLip(lip, transform, hang);
+        if (pole != null && hooked.WantsTwoHandHold)
+            pole.PoseCatchSupport(hooked.CatchSupportPoint, hang, catchHoldWeight);
+    }
+
+    /// <summary>
+    /// Rod pose for a phase, derived only from its arguments so the editor
+    /// preview poses the rod exactly the way gameplay does. <paramref name="castStage"/>
+    /// runs 0 at the top of the backcast to 1 once the rod has come through.
+    /// </summary>
+    public FishingPole.Motion BuildPoleMotion(
+        Phase forPhase, Vector3 aimPoint, float castStage, float sway, float load, bool fightHeld)
+    {
+        float fling = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(castStage));
+
+        var motion = new FishingPole.Motion
+        {
+            AimPoint = aimPoint,
+            HoldLocal = poleHoldOffset,
+            Scale = poleScale,
+            Thickness = poleThickness,
+            Pitch = polePitch,
+            CastLean = poleCastLean,
+            LeftHand = 1f
+        };
+
+        switch (forPhase)
+        {
+            case Phase.Aiming:
+                motion.HoldLocal = poleCastHoldOffset;
+                motion.Pitch = poleCastPitch;
+                motion.BackCast = 1f;
+                motion.LeftHand = 0.35f;
+                motion.Bend = 0.1f;
+                break;
+            case Phase.Flying:
+                motion.HoldLocal = Vector3.Lerp(poleCastHoldOffset, poleHoldOffset, fling);
+                motion.Pitch = Mathf.Lerp(poleCastPitch, polePitch, fling);
+                motion.BackCast = 1f - fling;
+                motion.LeftHand = Mathf.Lerp(0.35f, 1f, fling);
+                motion.Bend = 0.08f + 4f * fling * (1f - fling) * 0.4f;
+                break;
+            case Phase.Retrieving:
+            {
+                float dist = Vector3.Distance(aimPoint, transform.position);
+                motion.HoldLocal = poleHoldOffset + new Vector3(0.01f, 0.02f, 0.03f);
+                motion.Pitch = Mathf.Lerp(24f, polePitch, Mathf.InverseLerp(1.4f, 14f, dist));
+                motion.Bend = 0.14f;
+                break;
+            }
+            case Phase.Fighting:
+            {
+                float dist = Vector3.Distance(aimPoint, transform.position);
+                motion.HoldLocal = poleHoldOffset + new Vector3(sway * 0.025f, fightHeld ? 0.06f : 0.02f, 0.04f);
+                motion.Pitch = Mathf.Lerp(26f, polePitch + 4f, Mathf.InverseLerp(1.4f, 14f, dist));
+                motion.Pitch += fightHeld ? 8f : -4f;
+                motion.Yaw = sway * 10f;
+                motion.Bend = Mathf.Clamp01(load * (fightHeld ? 1.05f : 0.78f));
+                break;
+            }
+            case Phase.InWater:
+                motion.Bend = 0.06f;
+                break;
+        }
+
+        return motion;
+    }
+
+    /// <summary>Tracks how hard the fish is pulling and which way the rod leans.</summary>
+    void AdvanceFightSway(out float sway, out float load)
+    {
+        if (fight == null)
+        {
+            sway = 0f;
+            load = 0.35f;
+            return;
+        }
+
+        float dart = Mathf.Abs(fight.FishY - lastFishY) / Mathf.Max(Time.deltaTime, 0.0001f);
+        lastFishY = fight.FishY;
+        load = 0.38f + fight.Size * 0.42f;
+        if (dart > 0.7f)
+            load = Mathf.Min(1f, load + 0.28f);
+
+        float targetSway = Mathf.Sin(Time.time * 1.15f) * 0.4f
+            + Mathf.Sin(Time.time * 2.35f) * 0.22f
+            + (fight.FishY - 0.5f) * 0.55f;
+        if (dart > 0.7f)
+            targetSway += Mathf.Sign(Mathf.Sin(Time.time * 9f + fight.Size)) * 0.45f;
+
+        fightSway = Mathf.SmoothDamp(fightSway, Mathf.Clamp(targetSway, -1f, 1f), ref fightSwayVel, 0.16f);
+        sway = fightSway;
+    }
+
+    void ReleaseLureFromTip()
+    {
+        if (!lureOnTip || phase != Phase.Flying || lureObject == null)
+            return;
+
+        Vector3 tip = RodTip();
+        lureObject.transform.position = tip;
+        if (flingTime < FlingDuration * FlingRelease)
+            return;
+
+        lureOnTip = false;
+        flyStart = tip;
+        flyEnd = pendingLanding;
+        flyTime = 0f;
+        lureObject.transform.rotation = Quaternion.LookRotation(Flatten(flyEnd - flyStart), Vector3.up);
+    }
+
+    Vector3 PoleAimPoint()
+    {
+        if (phase == Phase.Aiming || phase == Phase.Flying)
+            return pendingLanding;
+        if (phase == Phase.Fighting && hooked != null)
+            return hooked.LinePoint;
+        if (lureObject != null && lureObject.activeSelf && !lureOnTip)
+            return lureObject.transform.position;
+        return transform.position + transform.forward * 8f;
+    }
+
+    /// <summary>
+    /// Body facing during the swing stays on the landing. Aiming the torso at a
+    /// lure still clipped to the tip is what sent the angler around in a circle.
+    /// </summary>
+    Vector3 FacePoint()
+    {
+        if (phase == Phase.Aiming || phase == Phase.Flying)
+            return pendingLanding;
+        return PoleAimPoint();
+    }
+
+    Vector3 RodTip()
+    {
+        if (pole != null && pole.gameObject.activeInHierarchy)
+            return pole.TipPosition;
+        return transform.TransformPoint(castOriginOffset);
+    }
+
+    void FaceFishingTarget(Vector3 world)
+    {
+        Vector3 to = world - transform.position;
+        to.y = 0f;
+        if (to.sqrMagnitude < 0.25f)
+            return;
+
+        Quaternion look = Quaternion.LookRotation(to.normalized, Vector3.up);
+        transform.rotation = Quaternion.Slerp(
+            transform.rotation,
+            look,
+            1f - Mathf.Exp(-4.5f * Time.deltaTime));
+    }
+
     void UpdateLine()
     {
         if (line == null)
             return;
 
-        Vector3 rod = transform.TransformPoint(castOriginOffset);
-        if (phase == Phase.Aiming)
-        {
-            SetLineArc(rod, pendingLanding);
-            return;
-        }
-
-        if (lureObject == null || !lureObject.activeSelf || phase == Phase.Idle || phase == Phase.ShowingCatch)
+        if (phase == Phase.Idle || phase == Phase.ShowingCatch)
         {
             line.enabled = false;
             return;
         }
 
-        if (phase == Phase.Fighting && hooked != null)
+        int rodCount = 0;
+        if (pole != null && pole.gameObject.activeInHierarchy)
         {
-            SetLineTo(rod, hooked.LinePoint);
+            EnsureLineBuffer();
+            rodCount = pole.CopyPath(lineBuffer);
+        }
+
+        Vector3 tip = rodCount > 0 ? lineBuffer[rodCount - 1] : RodTip();
+        Vector3 end;
+        bool arc;
+        if (phase == Phase.Aiming)
+        {
+            end = pendingLanding;
+            arc = true;
+        }
+        else if (lureObject == null || !lureObject.activeSelf)
+        {
+            line.enabled = false;
             return;
         }
-
-        if (phase == Phase.Flying)
+        else if (phase == Phase.Fighting && hooked != null)
         {
-            SetLineArc(rod, lureObject.transform.position);
-            return;
+            end = hooked.LinePoint;
+            arc = false;
+        }
+        else if (phase == Phase.Flying)
+        {
+            end = lureObject.transform.position;
+            arc = true;
+        }
+        else
+        {
+            end = lureObject.transform.position;
+            arc = false;
         }
 
-        SetLineTo(rod, lureObject.transform.position);
+        SetLineFromRod(rodCount, tip, end, arc);
     }
 
-    void SetLineArc(Vector3 start, Vector3 end, float heightScale = 1f)
+    void SetLineFromRod(int rodCount, Vector3 tip, Vector3 end, bool arc)
     {
-        const int points = 16;
-        EnsureLinePoints(points);
+        const int extra = 12;
+        int prefix = rodCount > 0 ? rodCount : 1;
+        int total = prefix + extra;
+        EnsureLinePoints(total);
 
-        float distance = Vector3.Distance(start, end);
-        float arc = ArcHeight(distance) * heightScale;
-        for (int i = 0; i < points; i++)
+        Vector3 from;
+        int start;
+        if (rodCount > 0)
         {
-            float t = i / (points - 1f);
-            Vector3 point = Vector3.Lerp(start, end, t);
-            point.y += Mathf.Sin(t * Mathf.PI) * arc;
-            line.SetPosition(i, point);
+            for (int i = 0; i < rodCount; i++)
+                line.SetPosition(i, lineBuffer[i]);
+            from = lineBuffer[rodCount - 1];
+            start = rodCount;
         }
-    }
-
-    void SetLineTo(Vector3 start, Vector3 end)
-    {
-        const int points = 12;
-        EnsureLinePoints(points);
-
-        float sag = Mathf.Min(0.35f, Vector3.Distance(start, end) * 0.04f);
-        bool pinToWater = phase != Phase.Fighting && end.y >= waterHeight - 0.04f;
-        for (int i = 0; i < points; i++)
+        else
         {
-            float t = i / (points - 1f);
-            Vector3 point = Vector3.Lerp(start, end, t);
-            point.y -= Mathf.Sin(t * Mathf.PI) * sag;
+            from = tip;
+            line.SetPosition(0, from);
+            start = 1;
+        }
+
+        float distance = Vector3.Distance(from, end);
+        float bow = arc
+            ? ArcHeight(distance)
+            : Mathf.Min(0.35f, distance * 0.04f);
+        bool pinToWater = !arc && phase != Phase.Fighting && end.y >= waterHeight - 0.04f;
+        int remaining = total - start;
+        for (int i = 0; i < remaining; i++)
+        {
+            float t = remaining <= 1 ? 1f : (i + 1) / (float)remaining;
+            Vector3 point = Vector3.Lerp(from, end, t);
+            float wave = Mathf.Sin(t * Mathf.PI) * bow;
+            point.y += arc ? wave : -wave;
             if (pinToWater && point.y < waterHeight + 0.02f)
                 point.y = waterHeight + 0.02f;
-            line.SetPosition(i, point);
+            line.SetPosition(start + i, point);
         }
+    }
+
+    void EnsureLineBuffer()
+    {
+        int needed = pole != null ? Mathf.Max(8, pole.PathCount) : 8;
+        if (lineBuffer == null || lineBuffer.Length < needed)
+            lineBuffer = new Vector3[needed];
     }
 
     void EnsureLinePoints(int points)
@@ -901,6 +1233,49 @@ public class PlayerFishing : MonoBehaviour
         return Mathf.Lerp(1.45f, arcHeight, Mathf.InverseLerp(minCastDistance, maxCastDistance, distance));
     }
 
+    void HidePole()
+    {
+        if (pole != null)
+            pole.PutAway();
+
+        foreach (var stray in GetComponentsInChildren<FishingPole>(true))
+        {
+            if (stray != null && stray != pole)
+                stray.gameObject.SetActive(false);
+        }
+    }
+
+    void EnsurePole()
+    {
+        if (pole != null)
+            return;
+
+#if UNITY_EDITOR
+        if (polePrefab == null)
+            polePrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(FishingPole.PrefabPath);
+#endif
+        if (polePrefab == null)
+            return;
+
+        pole = FishingPole.Spawn(polePrefab, transform, GetComponentInChildren<Animator>());
+    }
+
+#if UNITY_EDITOR
+    /// <summary>
+    /// Editor preview hook. The rod caches bone and marker references that a
+    /// domain reload wipes, so tuning always starts from a fresh spawn.
+    /// </summary>
+    public FishingPole EditorRebuildPole()
+    {
+        foreach (var stale in GetComponentsInChildren<FishingPole>(true))
+            DestroyImmediate(stale.gameObject);
+
+        pole = null;
+        EnsurePole();
+        return pole;
+    }
+#endif
+
     void EnsureLure()
     {
         if (lureObject != null)
@@ -914,7 +1289,7 @@ public class PlayerFishing : MonoBehaviour
         lineGo.transform.SetParent(transform, false);
         line = lineGo.AddComponent<LineRenderer>();
         line.positionCount = 2;
-        line.widthMultiplier = 0.025f;
+        line.widthMultiplier = 0.018f;
         line.useWorldSpace = true;
         line.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         line.material = new Material(FindUnlitShader());
@@ -991,6 +1366,90 @@ public class PlayerFishing : MonoBehaviour
             default:
                 return Mathf.MoveTowards(currentY, holdDepthY, step);
         }
+    }
+
+    /// <summary>
+    /// Tick off the side of rock and timber. Tops and gentle slopes stay a
+    /// floor so the lure can ride over them; a wall slides the retrieve around
+    /// the real mesh instead of a bounds-sized halo.
+    /// </summary>
+    Vector3 SlideOffCover(Vector3 from, Vector3 planar)
+    {
+        int mask = WorldConditions.StructureMask;
+        if (mask == 0)
+            return planar;
+
+        Vector3 at = from;
+        int overlapped = Physics.OverlapSphereNonAlloc(at, LureRadius, CoverOverlap, mask, QueryTriggerInteraction.Ignore);
+        for (int i = 0; i < overlapped; i++)
+        {
+            Collider col = CoverOverlap[i];
+            if (col == null)
+                continue;
+
+            Vector3 closest = col.ClosestPoint(at);
+            Vector3 push = at - closest;
+            if (push.sqrMagnitude < 0.000001f)
+                push = Vector3.ProjectOnPlane(at - col.bounds.center, Vector3.up);
+            if (push.sqrMagnitude < 0.000001f)
+                continue;
+
+            push.y = 0f;
+            if (push.sqrMagnitude < 0.000001f)
+                continue;
+
+            at += push.normalized * (LureRadius - push.magnitude + 0.01f);
+        }
+
+        Vector3 desired = new Vector3(planar.x, at.y, planar.z);
+        Vector3 delta = desired - at;
+        delta.y = 0f;
+        float dist = delta.magnitude;
+        if (dist > 0.0001f)
+        {
+            int hits = Physics.SphereCastNonAlloc(
+                at,
+                LureRadius,
+                delta / dist,
+                CoverHits,
+                dist,
+                mask,
+                QueryTriggerInteraction.Ignore);
+            RaycastHit best = default;
+            bool found = false;
+            for (int i = 0; i < hits; i++)
+            {
+                RaycastHit hit = CoverHits[i];
+                if (hit.collider == null)
+                    continue;
+                if (hit.normal.y > 0.65f)
+                    continue;
+                if (!found || hit.distance < best.distance)
+                {
+                    best = hit;
+                    found = true;
+                }
+            }
+
+            if (found)
+            {
+                Vector3 n = best.normal;
+                n.y = 0f;
+                if (n.sqrMagnitude > 0.0001f)
+                {
+                    n.Normalize();
+                    Vector3 leftover = delta.normalized * Mathf.Max(0f, dist - best.distance);
+                    Vector3 slide = Vector3.ProjectOnPlane(leftover, n);
+                    at = best.point + n * LureRadius + slide;
+                }
+            }
+            else
+            {
+                at = desired;
+            }
+        }
+
+        return new Vector3(at.x, 0f, at.z);
     }
 
     /// <summary>

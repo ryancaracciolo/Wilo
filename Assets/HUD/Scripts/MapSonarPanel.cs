@@ -23,6 +23,7 @@ public class MapSonarPanel : VisualElement
 
     public event Action ExpandRequested;
     public event Action<IReadOnlyList<CatchRecord>> ClusterClicked;
+    public event Action<MapSpot> SpotClicked;
 
     public MapSonarPanel()
     {
@@ -42,6 +43,7 @@ public class MapSonarPanel : VisualElement
         map = new LakeMapElement();
         map.ExpandRequested += () => ExpandRequested?.Invoke();
         map.ClusterClicked += cluster => ClusterClicked?.Invoke(cluster);
+        map.SpotClicked += spot => SpotClicked?.Invoke(spot);
         sonar = new SonarElement();
         sonarDepth = new Label();
         sonarDepth.AddToClassList("hud-sonar-depth");
@@ -64,6 +66,11 @@ public class MapSonarPanel : VisualElement
     public void SetMarked(List<CatchRecord> records, CatchRecord selected)
     {
         map.SetMarked(records, selected);
+    }
+
+    public void SetSpots(List<MapSpot> records, MapSpot selected)
+    {
+        map.SetSpots(records, selected);
     }
 
     public void BakeMap(float depthScale = 1f)
@@ -94,10 +101,10 @@ public class MapSonarPanel : VisualElement
         Transform player = conditions.PlayerTransform;
         if (player != null)
         {
-            Transform marker = conditions.OnBoat && conditions.OccupiedBoat != null
-                ? conditions.OccupiedBoat.transform
-                : player;
-            map.SetPlayer(marker.position, marker.eulerAngles.y);
+            if (conditions.OnBoat && conditions.OccupiedBoat != null)
+                map.SetPlayer(conditions.OccupiedBoat.transform.position, conditions.OccupiedBoat.BowYaw);
+            else
+                map.SetPlayer(player.position, player.eulerAngles.y);
         }
 
         if (!conditions.OnBoat)

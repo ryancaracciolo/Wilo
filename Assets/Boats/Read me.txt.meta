@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: bc1c7dd000dd5754ea826e21d3968574
+timeCreated: 1468840537
+licenseType: Store
+TextScriptImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 67293
+  packageName: Boats Pack
+  packageVersion: 1.0
+  assetPath: Assets/Boats/Read me.txt
+  uploadId: 127815

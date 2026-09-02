@@ -23,7 +23,7 @@ public class LakeSave
     /// <summary>Identity of this lake, so a player's log can say where it happened.</summary>
     public string lakeId = "";
 
-    /// <summary>Seeds every fish draw. The same seed must always rebuild the same lake.</summary>
+    /// <summary>Lake identity. Fish draws mix this with the calendar day.</summary>
     public int worldSeed;
 
     public ClockData clock = new ClockData();
@@ -33,6 +33,29 @@ public class LakeSave
     /// does not refill the water you already worked. Cleared on the day rollover.
     /// </summary>
     public List<HarvestedCell> harvested = new List<HarvestedCell>();
+
+    /// <summary>Named stars the player pinned on this lake's map.</summary>
+    public List<MapSpot> mapSpots = new List<MapSpot>();
+}
+
+/// <summary>A player-named waypoint on the lake map. Saved with the lake.</summary>
+[Serializable]
+public class MapSpot
+{
+    public const int MaxNameLength = 16;
+    public const int MaxCount = 32;
+
+    public string id = "";
+    public string name = "";
+    public Vector3 worldPosition;
+
+    public static string CleanName(string value)
+    {
+        string clean = string.IsNullOrEmpty(value) ? "" : value.Trim();
+        if (clean.Length > MaxNameLength)
+            clean = clean.Substring(0, MaxNameLength).TrimEnd();
+        return clean;
+    }
 }
 
 [Serializable]

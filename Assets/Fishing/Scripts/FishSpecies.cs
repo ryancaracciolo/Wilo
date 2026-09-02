@@ -12,6 +12,8 @@ public class FishSpecies : ScriptableObject
     public float TypicalLengthInches = 16f;
     [Tooltip("World length of the prefab at its saved scale. Used to scale individuals.")]
     public float PrefabLengthInches = 19.5f;
+    [Tooltip("At or above this weight the angler supports the belly with the other hand.")]
+    public float TwoHandHoldPounds = 4f;
 
     public float VisualScale(FishSize size, float readability)
     {

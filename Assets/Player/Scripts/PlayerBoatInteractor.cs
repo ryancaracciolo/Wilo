@@ -3,9 +3,11 @@ using UnityEngine.InputSystem;
 
 /// <summary>
 /// Boards and leaves the nearby rowboat. Uses F / Interact so it does not
-/// fight Q/E camera rotation.
+/// fight Q/E camera rotation. On the boat, idle/fishing stands on the seat;
+/// WASD steps back to the tiller.
 /// </summary>
 [RequireComponent(typeof(PlayerMotor))]
+[DefaultExecutionOrder(50)]
 public class PlayerBoatInteractor : MonoBehaviour
 {
     const string CueId = "boat";
@@ -13,9 +15,11 @@ public class PlayerBoatInteractor : MonoBehaviour
     [SerializeField] float boardRange = 5.2f;
     [SerializeField] float dockRange = 8f;
     [SerializeField] float interactCooldown = 0.35f;
+    [SerializeField] float stanceBlend = 10f;
 
     PlayerMotor motor;
     CharacterController controller;
+    Animator animator;
     BoatMotor occupiedBoat;
     PlayerFishing fishing;
     InputAction interactAction;
@@ -34,6 +38,7 @@ public class PlayerBoatInteractor : MonoBehaviour
         motor = GetComponent<PlayerMotor>();
         controller = GetComponent<CharacterController>();
         fishing = GetComponent<PlayerFishing>();
+        animator = GetComponentInChildren<Animator>();
     }
 
     void OnEnable()
@@ -59,6 +64,16 @@ public class PlayerBoatInteractor : MonoBehaviour
             return;
 
         TryInteract();
+    }
+
+    void LateUpdate()
+    {
+        if (occupiedBoat == null)
+            return;
+
+        ApplyStance();
+        if (WantsHelm())
+            ReachTiller();
     }
 
     bool WasInteractPressed()
@@ -139,9 +154,8 @@ public class PlayerBoatInteractor : MonoBehaviour
         if (controller != null)
             controller.enabled = false;
 
-        transform.SetParent(boat.Seat, true);
-        transform.localPosition = Vector3.zero;
-        transform.localRotation = Quaternion.identity;
+        transform.SetParent(boat.transform, true);
+        SnapTo(boat.Seat);
         boat.SetOccupied(true);
     }
 
@@ -158,6 +172,77 @@ public class PlayerBoatInteractor : MonoBehaviour
         if (controller != null)
             controller.enabled = true;
         motor.enabled = true;
+    }
+
+    bool WantsHelm()
+    {
+        if (occupiedBoat == null || occupiedBoat.Helm == null)
+            return false;
+        if (fishing != null && fishing.IsFishing)
+            return false;
+        return occupiedBoat.HasDriveInput;
+    }
+
+    void ApplyStance()
+    {
+        Transform stance = WantsHelm() ? occupiedBoat.Helm : occupiedBoat.Seat;
+        if (stance == null)
+            return;
+
+        if (transform.parent != occupiedBoat.transform)
+            transform.SetParent(occupiedBoat.transform, true);
+
+        float t = 1f - Mathf.Exp(-stanceBlend * Time.deltaTime);
+        transform.localPosition = Vector3.Lerp(transform.localPosition, stance.localPosition, t);
+        if (fishing == null || !fishing.IsFishing)
+            transform.localRotation = Quaternion.Slerp(transform.localRotation, stance.localRotation, t);
+    }
+
+    void SnapTo(Transform stance)
+    {
+        if (stance == null)
+            return;
+
+        transform.localPosition = stance.localPosition;
+        transform.localRotation = stance.localRotation;
+    }
+
+    void ReachTiller()
+    {
+        if (animator == null || occupiedBoat.Tiller == null)
+            return;
+
+        Transform upper = animator.GetBoneTransform(HumanBodyBones.RightUpperArm);
+        Transform lower = animator.GetBoneTransform(HumanBodyBones.RightLowerArm);
+        Transform hand = animator.GetBoneTransform(HumanBodyBones.RightHand);
+        if (upper == null || lower == null || hand == null)
+            return;
+
+        Vector3 target = occupiedBoat.Tiller.position;
+        Vector3 hint = target + transform.right * 0.1f - transform.up * 0.08f;
+        Vector3 root = upper.position;
+        float upperLen = Vector3.Distance(root, lower.position);
+        float lowerLen = Vector3.Distance(lower.position, hand.position);
+        Vector3 toTarget = target - root;
+        float reach = Mathf.Clamp(toTarget.magnitude, 0.05f, upperLen + lowerLen - 0.02f);
+        Vector3 dir = toTarget.sqrMagnitude > 0.0001f ? toTarget.normalized : upper.forward;
+        Vector3 axis = Vector3.Cross(dir, hint - root);
+        if (axis.sqrMagnitude < 0.0001f)
+            axis = Vector3.Cross(dir, Vector3.up);
+        axis.Normalize();
+
+        float cos = (upperLen * upperLen + reach * reach - lowerLen * lowerLen) / (2f * upperLen * reach);
+        float bend = Mathf.Acos(Mathf.Clamp(cos, -1f, 1f)) * Mathf.Rad2Deg;
+        Vector3 elbow = root + Quaternion.AngleAxis(bend, axis) * dir * upperLen;
+
+        Vector3 currentUpper = lower.position - root;
+        if (currentUpper.sqrMagnitude > 0.00001f)
+            upper.rotation = Quaternion.FromToRotation(currentUpper, elbow - root) * upper.rotation;
+
+        Vector3 currentLower = hand.position - lower.position;
+        Vector3 wantedLower = target - lower.position;
+        if (currentLower.sqrMagnitude > 0.00001f && wantedLower.sqrMagnitude > 0.00001f)
+            lower.rotation = Quaternion.FromToRotation(currentLower, wantedLower) * lower.rotation;
     }
 
     bool TryGetDisembarkPose(out Vector3 position, out Quaternion rotation)
@@ -308,7 +393,7 @@ public class PlayerBoatInteractor : MonoBehaviour
         for (int i = 0; i < boats.Length; i++)
         {
             BoatMotor boat = boats[i];
-            if (boat == null)
+            if (boat == null || !boat.Boardable)
                 continue;
 
             float d = Vector3.Distance(transform.position, boat.transform.position);

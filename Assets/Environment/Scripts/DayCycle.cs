@@ -40,8 +40,8 @@ public class DayCycle : MonoBehaviour
     [SerializeField] float curfewAfterDuskHours = 1f;
     [Tooltip("How long before curfew the player is warned.")]
     [SerializeField] float warningLeadHours = 1.5f;
-    [Tooltip("Wake this long after dawn, so mornings track the season. Must not be negative or the new day reads as overdue.")]
-    [SerializeField, Min(0f)] float wakeAfterDawnHours = 0f;
+    [Tooltip("Hour the player wakes each morning. Tournament days may start earlier.")]
+    [SerializeField, Range(0f, 24f)] float wakeHour = GameCalendar.NewGameHour;
 
     [Header("Dock")]
     [Tooltip("Scene object the player must stand near to turn in. Falls back to the home anchor.")]
@@ -95,13 +95,11 @@ public class DayCycle : MonoBehaviour
     public bool AwaitingContinue { get; private set; }
     public float CurfewHour => conditions != null ? conditions.DuskHour + curfewAfterDuskHours : 21f;
     public float WarningHour => CurfewHour - Mathf.Max(0.25f, warningLeadHours);
-    public float WakeHour => conditions != null
-        ? Mathf.Repeat(conditions.DawnHour + wakeAfterDawnHours, 24f)
-        : 6.5f;
+    public float WakeHour => Mathf.Repeat(wakeHour, 24f);
 
     /// <summary>
     /// Registered tournament mornings start early enough to boat from the cabin
-    /// to the camp. Other days follow dawn.
+    /// to the camp. Other days start at the authored wake hour.
     /// </summary>
     public float WakeHourFor(int dayIndex)
     {
@@ -296,7 +294,7 @@ public class DayCycle : MonoBehaviour
         if (director == null)
             director = FindFirstObjectByType<TournamentDirector>();
         if (boat == null)
-            boat = FindFirstObjectByType<BoatMotor>();
+            boat = FindPlayerBoat();
         if (dock == null && !string.IsNullOrEmpty(dockObjectName))
         {
             var go = GameObject.Find(dockObjectName);
@@ -319,6 +317,18 @@ public class DayCycle : MonoBehaviour
             mooringPosition = boat.transform.position;
             mooringRotation = boat.transform.rotation;
         }
+    }
+
+    static BoatMotor FindPlayerBoat()
+    {
+        BoatMotor[] boats = FindObjectsByType<BoatMotor>();
+        for (int i = 0; i < boats.Length; i++)
+        {
+            if (boats[i] != null && boats[i].Boardable)
+                return boats[i];
+        }
+
+        return null;
     }
 
     bool IsNearDock()

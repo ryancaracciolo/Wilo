@@ -15,7 +15,7 @@ public class PlayerOrbitCamera : MonoBehaviour
     [SerializeField] Vector2 followViewport = new Vector2(0.5f, 0.45f);
 
     [Header("Orbit")]
-    [SerializeField] float defaultDistance = 6.2f;
+    [SerializeField] float defaultDistance = 8.2f;
     [SerializeField] float minDistance = 4.5f;
     [SerializeField] float maxDistance = 15.5f;
     [SerializeField] float defaultPitch = 48f;
@@ -39,9 +39,9 @@ public class PlayerOrbitCamera : MonoBehaviour
     [SerializeField] float followSmoothTime = 0.08f;
 
     [Header("Catch framing")]
-    [SerializeField] float catchDistance = 3.3f;
-    [SerializeField] float catchPitch = 26f;
-    [SerializeField] Vector2 catchViewport = new Vector2(0.56f, 0.46f);
+    [SerializeField] float catchFramingDistance = 3.7f;
+    [SerializeField] float catchFramingPitch = 16f;
+    [SerializeField] Vector2 catchFramingViewport = new Vector2(0.5f, 0.52f);
     [SerializeField] float catchBlendDuration = 0.62f;
     [SerializeField] float catchRestoreDuration = 0.52f;
 
@@ -164,11 +164,11 @@ public class PlayerOrbitCamera : MonoBehaviour
         float sizeBoost = 0f;
         var agent = fish != null ? fish.GetComponent<FishAgent>() : null;
         if (agent != null)
-            sizeBoost = Mathf.Lerp(0f, 0.55f, Mathf.InverseLerp(0.6f, 8f, agent.Size.Pounds));
+            sizeBoost = Mathf.Lerp(0.12f, 1.05f, Mathf.InverseLerp(0.6f, 8f, agent.Size.Pounds));
 
         BeginBlend(
             yaw, pitch, distance, viewport,
-            yaw, catchPitch, catchDistance + sizeBoost, catchViewport,
+            yaw, catchFramingPitch, catchFramingDistance + sizeBoost, catchFramingViewport,
             catchBlendDuration);
     }
 
@@ -231,7 +231,12 @@ public class PlayerOrbitCamera : MonoBehaviour
         Vector3 playerPivot = target.position + pivotOffset;
         if (!catchFraming || catchFocus == null)
             return playerPivot;
-        return Vector3.Lerp(playerPivot, catchFocus.position, 0.46f);
+
+        Vector3 fishPivot = catchFocus.position;
+        var agent = catchFocus.GetComponent<FishAgent>();
+        if (agent != null)
+            fishPivot = agent.CatchFocusPoint;
+        return Vector3.Lerp(playerPivot, fishPivot, 0.58f);
     }
 
     void ApplyLookInput()

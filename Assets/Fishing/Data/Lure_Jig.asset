@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::LureDefinition
   Id: jig
   DisplayName: Jig
-  Hint: Heavy. Drops fast and crawls the bottom.
+  Hint: Gets down fast. For deep water and the bottom.
   Color: {r: 0.72, g: 0.55, b: 0.18, a: 1}
   Icon: {fileID: 21300000, guid: be2e799156d4041c98baefb9809f7c23, type: 3}
   Kind: 2

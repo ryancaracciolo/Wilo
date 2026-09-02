@@ -22,6 +22,8 @@ public enum FishingPhase
 /// <summary>
 /// Compressed lake calendar: 28 days per season, 112 days per year, year
 /// starts March 1 so seasons line up with bass phases. Weekdays stay real.
+/// Each season is one 28-day month (Mar, Jun, Sep, Dec) so "in 7 days" still
+/// falls in the same month instead of skipping a 9-day July into August.
 /// Daylight length is derived here so lighting and the day cycle agree.
 /// </summary>
 public struct GameCalendar
@@ -33,7 +35,7 @@ public struct GameCalendar
 
     /// <summary>First morning on a new lake. Keep in sync with WorldConditions defaults.</summary>
     public const int NewGameDayOfYear = 30;
-    public const float NewGameHour = 7.5f;
+    public const float NewGameHour = 6f;
     public const DayOfWeek NewGameWeekday = DayOfWeek.Friday;
 
     /// <summary>Day of year with the longest daylight. Sits mid-summer.</summary>
@@ -42,11 +44,7 @@ public struct GameCalendar
     const float DaylightSwingHours = 3f;
 
     static readonly string[] WeekdayAbbr = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
-    static readonly string[] MonthAbbr =
-    {
-        "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb"
-    };
-    static readonly int[] DaysInMonth = { 9, 10, 9, 9, 10, 9, 9, 10, 9, 9, 10, 9 };
+    static readonly string[] MonthAbbr = { "Mar", "Jun", "Sep", "Dec" };
 
     public int DayIndex;
     public double MinutesInDay;
@@ -100,7 +98,7 @@ public struct GameCalendar
 
     public string DateLabel => DateLabelFor(DayIndex);
 
-    /// <summary>"Sat · Aug 3" for any day, so a schedule can date what it lists.</summary>
+    /// <summary>"Sat · Jun 18" for any day, so a schedule can date what it lists.</summary>
     public string DateLabelFor(int dayIndex)
     {
         ResolveMonth(Mod(dayIndex, DaysPerYear), out string month, out int day);
@@ -176,22 +174,16 @@ public struct GameCalendar
 
     static void ResolveMonth(int dayOfYear, out string abbr, out int dayOfMonth)
     {
-        int remaining = dayOfYear;
-        for (int i = 0; i < DaysInMonth.Length; i++)
+        int season = dayOfYear / DaysPerSeason;
+        if (season < 0 || season >= MonthAbbr.Length)
         {
-            int span = DaysInMonth[i];
-            if (remaining < span)
-            {
-                abbr = MonthAbbr[i];
-                dayOfMonth = remaining + 1;
-                return;
-            }
-
-            remaining -= span;
+            abbr = MonthAbbr[0];
+            dayOfMonth = 1;
+            return;
         }
 
-        abbr = MonthAbbr[0];
-        dayOfMonth = 1;
+        abbr = MonthAbbr[season];
+        dayOfMonth = dayOfYear - season * DaysPerSeason + 1;
     }
 
     static double Wrap(double minutes)

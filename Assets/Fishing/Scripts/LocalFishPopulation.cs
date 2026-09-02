@@ -6,10 +6,11 @@ using UnityEngine;
 /// Activates habitat cells around the player/boat and returns fish to a
 /// pool once those cells leave a despawn buffer. Fast travel just swaps
 /// the active set; skipped cells never spawn.
-/// Spawn rolls come from the lake's saved world seed, so a cell keeps its
-/// sample whether you leave and return or quit and come back tomorrow.
-/// Fish taken out of a cell stay gone for the rest of the day; overnight the
-/// pressure clears and the spot is worth a cast again.
+/// Spawn rolls come from (world seed, calendar day, cell). Leave and return
+/// the same day and the cell is unchanged. A new day re-rolls who lives there;
+/// habitat still says whether the spot is generally good.
+/// Fish taken out of a cell stay gone for the rest of that day; overnight the
+/// pressure clears and the new day's sample fills in.
 /// </summary>
 [RequireComponent(typeof(LakeSimulation))]
 public class LocalFishPopulation : MonoBehaviour
@@ -20,8 +21,8 @@ public class LocalFishPopulation : MonoBehaviour
     float activeRadius = 72f;
     [SerializeField, Tooltip("Must be larger than active radius so edge cells do not flicker.")]
     float despawnRadius = 96f;
-    [SerializeField] int maxFish = 24;
-    [SerializeField] int maxFishPerCell = 3;
+    [SerializeField, Tooltip("Panic ceiling only. Habitat density decides how many spawn below this.")]
+    int maxFish = 28;
     [SerializeField] int maxCellActivationsPerUpdate = 6;
     [SerializeField] float updateInterval = 0.15f;
     [SerializeField] int prewarmPerSpecies = 8;
@@ -32,6 +33,8 @@ public class LocalFishPopulation : MonoBehaviour
     float visibilityScale = 1f;
     [SerializeField, Tooltip("Planar fade so distant bass do not read as a grid.")]
     float viewDistance = 48f;
+    [SerializeField, Tooltip("TEMP: unhide every live fish and draw its weight. Turn off / delete when done scouting.")]
+    bool debugShowFish = true;
 
     readonly Dictionary<LakeCellId, List<FishAgent>> occupied = new Dictionary<LakeCellId, List<FishAgent>>();
     readonly HashSet<LakeCellId> empty = new HashSet<LakeCellId>();
@@ -45,6 +48,9 @@ public class LocalFishPopulation : MonoBehaviour
     float nextUpdateTime;
     int liveCount;
     int worldSeed;
+    int daySalt;
+    GUIStyle debugLabel;
+    GUIStyle debugHud;
 
     void Awake()
     {
@@ -56,10 +62,9 @@ public class LocalFishPopulation : MonoBehaviour
     }
 
     /// <summary>
-    /// The seed is the lake's identity: the same seed must always draw the same
-    /// fish from the same cell. That is what makes the lake continuous across
-    /// sessions, and what would later let two players fish one lake without
-    /// sending a single fish over the wire.
+    /// The seed is the lake's identity. Mixed with the calendar day it rebuilds
+    /// today's sample, so quitting and coming back mid-day does not reshuffle
+    /// the water you were just fishing.
     /// </summary>
     void ApplyFrom(SaveService save)
     {
@@ -71,6 +76,8 @@ public class LocalFishPopulation : MonoBehaviour
         }
 
         worldSeed = save.Lake.worldSeed;
+        if (save.Lake.clock != null)
+            daySalt = save.Lake.clock.dayIndex;
 
         harvested.Clear();
         List<HarvestedCell> cells = save.Lake.harvested;
@@ -104,7 +111,10 @@ public class LocalFishPopulation : MonoBehaviour
         Prewarm();
         nextUpdateTime = 0f;
         if (lake != null && lake.Conditions != null)
+        {
+            daySalt = lake.Conditions.DayIndex;
             lake.Conditions.DayChanged += OnDayChanged;
+        }
     }
 
     void OnDestroy()
@@ -114,18 +124,15 @@ public class LocalFishPopulation : MonoBehaviour
     }
 
     /// <summary>
-    /// Pressure only lasts the day. Overnight the fish move back into the spots
-    /// that were emptied, so yesterday's worked-over water is worth another look.
+    /// A new day is a new roll. Pressure clears, live fish go back to the pool,
+    /// and nearby cells spawn from today's hash on the next refresh.
     /// </summary>
     void OnDayChanged(int dayIndex)
     {
-        if (harvested.Count == 0)
-            return;
-
+        daySalt = dayIndex;
         harvested.Clear();
-        // Fished-out cells are still carrying their empty mark. Drop it rather
-        // than making the player leave the area before the water refills.
-        empty.Clear();
+        DespawnAll();
+        nextUpdateTime = 0f;
     }
 
     void OnDisable()
@@ -149,6 +156,94 @@ public class LocalFishPopulation : MonoBehaviour
         nextUpdateTime = Time.time + updateInterval;
         Refresh(origin, moved);
         lastOrigin = origin;
+    }
+
+    void OnGUI()
+    {
+        if (!debugShowFish)
+            return;
+
+        EnsureDebugStyles();
+        float heaviest = 0f;
+        float sum = 0f;
+        int n = 0;
+        Camera cam = Camera.main;
+        foreach (List<FishAgent> fish in occupied.Values)
+        {
+            for (int i = 0; i < fish.Count; i++)
+            {
+                FishAgent agent = fish[i];
+                if (agent == null || !agent.gameObject.activeInHierarchy)
+                    continue;
+
+                float pounds = agent.Size.Pounds;
+                sum += pounds;
+                n++;
+                if (pounds > heaviest)
+                    heaviest = pounds;
+
+                if (cam == null)
+                    continue;
+
+                Vector3 world = agent.transform.position + Vector3.up * 0.55f;
+                Vector3 screen = cam.WorldToScreenPoint(world);
+                if (screen.z < 0.4f)
+                    continue;
+
+                string name = agent.Species != null ? agent.Species.DisplayName : "Fish";
+                string text = $"{name}  {pounds:0.0} lb";
+                var rect = new Rect(screen.x - 90f, Screen.height - screen.y - 18f, 180f, 22f);
+                DrawDebugLabel(rect, text, DebugWeightColor(pounds));
+            }
+        }
+
+        string hud = n > 0
+            ? $"TEMP  {n} live   avg {sum / n:0.0} lb   biggest {heaviest:0.0} lb"
+            : "TEMP  0 live";
+        var hudRect = new Rect((Screen.width - 520f) * 0.5f, 10f, 520f, 28f);
+        GUI.color = new Color(0f, 0f, 0f, 0.75f);
+        GUI.Label(new Rect(hudRect.x + 1f, hudRect.y + 1f, hudRect.width, hudRect.height), hud, debugHud);
+        GUI.color = Color.white;
+        GUI.Label(hudRect, hud, debugHud);
+    }
+
+    void EnsureDebugStyles()
+    {
+        if (debugLabel != null)
+            return;
+
+        debugLabel = new GUIStyle(GUI.skin.label)
+        {
+            alignment = TextAnchor.MiddleCenter,
+            fontSize = 13,
+            fontStyle = FontStyle.Bold
+        };
+        debugHud = new GUIStyle(GUI.skin.label)
+        {
+            alignment = TextAnchor.MiddleCenter,
+            fontSize = 16,
+            fontStyle = FontStyle.Bold
+        };
+    }
+
+    void DrawDebugLabel(Rect rect, string text, Color color)
+    {
+        GUI.color = new Color(0f, 0f, 0f, 0.75f);
+        GUI.Label(new Rect(rect.x + 1f, rect.y + 1f, rect.width, rect.height), text, debugLabel);
+        GUI.color = color;
+        GUI.Label(rect, text, debugLabel);
+        GUI.color = Color.white;
+    }
+
+    static Color DebugWeightColor(float pounds)
+    {
+        if (pounds >= 6f)
+            return new Color(1f, 0.55f, 0.2f);
+        if (pounds >= 4f)
+            return new Color(1f, 0.85f, 0.25f);
+        if (pounds >= 2f)
+            return Color.white;
+        return new Color(0.75f, 0.82f, 0.9f);
     }
 
     void Refresh(Vector3 origin, float moved)
@@ -235,8 +330,22 @@ public class LocalFishPopulation : MonoBehaviour
         float mean;
         float peak;
         SampleCellDensity(id, origin.y, out mean, out peak);
-        float expected = (mean * 0.55f + peak * 0.45f) * (area / 1000f);
-        int target = Mathf.Clamp(StochasticRound(expected, Hash01(Hash(id, 3))), 0, maxFishPerCell);
+        // Peak is the stump / rock in the cell. Mean is diluted by open water
+        // in the same 24 m square, so lean on peak or a lone boulder never
+        // holds more than one fish.
+        float expected = (mean * 0.40f + peak * 0.60f) * (area / 1000f);
+        Vector3 cellCenter = CellCenter(id, origin.y);
+        float half = cellSize * 0.5f;
+        if (peak >= 1.4f &&
+            (lake.TryCoverInCell(cellCenter, half, CoverKind.Rock, out _) ||
+             lake.TryCoverInCell(cellCenter, half, CoverKind.Wood, out _)))
+        {
+            // A 24 m cell's open water dilutes density so a lone boulder
+            // coin-flips one fish. Cover should hold a small group.
+            float coverHold = Mathf.Lerp(1.9f, 3.3f, Mathf.InverseLerp(1.4f, 6.5f, peak));
+            expected = Mathf.Max(expected, coverHold);
+        }
+        int target = StochasticRound(expected, Hash01(Hash(id, 3)));
 
         // The roll is what the cell holds on an untouched day. Whatever came out
         // of it today comes off the top, so a spot you worked over stays thin.
@@ -249,7 +358,7 @@ public class LocalFishPopulation : MonoBehaviour
         }
 
         int attempts = Mathf.Max(target * 8, 12);
-        var spawned = new List<FishAgent>(maxFishPerCell);
+        var spawned = new List<FishAgent>(target);
         float minAccept = Mathf.Max(0.04f, peak * 0.38f);
         for (int i = 0; i < attempts && spawned.Count < target && liveCount + spawned.Count < maxFish; i++)
         {
@@ -263,8 +372,11 @@ public class LocalFishPopulation : MonoBehaviour
                 species);
             if (!local.HasFish || local.FishPerThousandSqMeters < minAccept)
                 continue;
+            if (!FishAgent.HasSwimRoom(lake.GroundDepthMeters(point)))
+                continue;
 
-            FishSpecies chosen = lake.PickSpecies(features, Hash01(Hash(id, 101 + i)));
+            HabitatFeatures sizeFeatures = SizeFeaturesFromNearbyCover(point, features);
+            FishSpecies chosen = lake.PickSpecies(sizeFeatures, Hash01(Hash(id, 101 + i)));
             if (chosen == null || chosen.Prefab == null)
                 continue;
 
@@ -274,12 +386,12 @@ public class LocalFishPopulation : MonoBehaviour
                 Hash01(Hash(id, 50 + i)),
                 Hash01(Hash(id, 61 + i)),
                 lake.Profile,
-                features);
+                sizeFeatures,
+                Hash01(Hash(id, 83 + i)));
             float columnT = FishAgent.BottomWeightedColumn(Hash01(Hash(id, 71 + i)));
-            float depth = lake.GeometricDepthMeters(point);
             Vector3 spawnAt = new Vector3(
                 point.x,
-                lake.SurfaceY - FishAgent.DepthBelowSurface(depth, columnT),
+                lake.SurfaceY - FishAgent.DepthBelowSurface(lake.GroundDepthMeters(point), columnT),
                 point.z);
             FishAgent agent = Take(chosen);
             if (agent == null)
@@ -504,14 +616,14 @@ public class LocalFishPopulation : MonoBehaviour
         ref float bestDensity)
     {
         Vector3 coverAt;
-        if (!lake.TryCoverInCell(center, cellSize * 0.5f, kind, out coverAt))
+        float coverRadius;
+        if (!lake.TryCoverInCell(center, cellSize * 0.5f, kind, out coverAt, out coverRadius))
             return;
 
-        float ang = Hash01(Hash(id, salt + (int)kind * 271)) * Mathf.PI * 2f;
-        float r = CoverSitMeters(kind, id, salt);
         for (int i = 0; i < 6; i++)
         {
-            float a = ang + i * 1.047f;
+            float a = Hash01(Hash(id, salt + (int)kind * 271 + i * 17)) * Mathf.PI * 2f;
+            float r = CoverSitMeters(kind, coverRadius, id, salt, i);
             Vector3 p = ClampToCell(
                 id,
                 new Vector3(coverAt.x + Mathf.Cos(a) * r, origin.y, coverAt.z + Mathf.Sin(a) * r));
@@ -520,6 +632,8 @@ public class LocalFishPopulation : MonoBehaviour
 
             HabitatSample local = lake.SampleAt(p);
             if (!local.HasFish)
+                continue;
+            if (!FishAgent.HasSwimRoom(lake.GroundDepthMeters(p)))
                 continue;
 
             if (local.FishPerThousandSqMeters > bestDensity)
@@ -530,9 +644,33 @@ public class LocalFishPopulation : MonoBehaviour
         }
     }
 
-    float CoverSitMeters(CoverKind kind, LakeCellId id, int salt)
+    /// <summary>
+    /// Size and species should read the structure the fish belongs to, not the
+    /// sit point 2 m off it. Depth stays where they spawned.
+    /// </summary>
+    HabitatFeatures SizeFeaturesFromNearbyCover(Vector3 spawn, in HabitatFeatures atSpawn)
     {
-        float u = Hash01(Hash(id, salt + (int)kind * 733));
+        float rock = atSpawn.Rock;
+        float wood = atSpawn.Wood;
+        Vector3 coverAt;
+        if (lake.TryCoverInCell(spawn, 6f, CoverKind.Rock, out coverAt))
+            rock = Mathf.Max(rock, lake.SampleFeatures(coverAt).Rock);
+        if (lake.TryCoverInCell(spawn, 6f, CoverKind.Wood, out coverAt))
+            wood = Mathf.Max(wood, lake.SampleFeatures(coverAt).Wood);
+        if (Mathf.Approximately(rock, atSpawn.Rock) && Mathf.Approximately(wood, atSpawn.Wood))
+            return atSpawn;
+        return new HabitatFeatures(
+            atSpawn.DepthFeet,
+            atSpawn.Dropoff,
+            rock,
+            wood,
+            atSpawn.Vegetation,
+            atSpawn.Convexity);
+    }
+
+    float CoverSitMeters(CoverKind kind, float coverRadius, LakeCellId id, int salt, int sample)
+    {
+        float u = Hash01(Hash(id, salt + (int)kind * 733 + sample * 41));
         HabitatProfile p = lake.Profile;
         switch (kind)
         {
@@ -543,8 +681,10 @@ public class LocalFishPopulation : MonoBehaviour
             }
             case CoverKind.Rock:
             {
-                float reach = p != null ? p.rockReachMeters : 2.2f;
-                return 0.55f + u * Mathf.Clamp(reach * 0.65f, 0.8f, 1.8f);
+                // Stay on the rock. Sitting 2 m off a 2 m stone reads as
+                // open water and the size roll collapses.
+                float maxR = Mathf.Max(0.35f, coverRadius) * 0.8f;
+                return maxR * u * u;
             }
             default:
                 return 0.45f + u * 1.35f;
@@ -619,10 +759,10 @@ public class LocalFishPopulation : MonoBehaviour
             return;
 
         float water = lake.Conditions != null ? lake.Conditions.WaterVisibility : 13.72f;
-        float vis = water * visibilityScale;
+        float vis = debugShowFish ? 0f : Mathf.Max(1f, water * visibilityScale);
         Shader.SetGlobalFloat("_WiloWaterY", lake.SurfaceY);
-        Shader.SetGlobalFloat("_WiloFishVisibility", Mathf.Max(1f, vis));
-        Shader.SetGlobalFloat("_WiloFishViewDistance", viewDistance);
+        Shader.SetGlobalFloat("_WiloFishVisibility", vis);
+        Shader.SetGlobalFloat("_WiloFishViewDistance", debugShowFish ? 400f : viewDistance);
         Shader.SetGlobalFloat("_WiloFishFadePower", 1.1f);
     }
 
@@ -633,7 +773,8 @@ public class LocalFishPopulation : MonoBehaviour
             uint h = (uint)(id.X * 73856093)
                 ^ (uint)(id.Z * 19349663)
                 ^ (uint)(salt * 83492791)
-                ^ (uint)(worldSeed * 1103515245);
+                ^ (uint)(worldSeed * 1103515245)
+                ^ (uint)(daySalt * 198491317);
 
             // Callers read low bits (PointInCell, yaw), and an XOR of products
             // leaves those marching in step across the grid. Avalanche first.
@@ -659,7 +800,6 @@ public class LocalFishPopulation : MonoBehaviour
         activeRadius = Mathf.Max(cellSize, activeRadius);
         despawnRadius = Mathf.Max(activeRadius + cellSize, despawnRadius);
         maxFish = Mathf.Max(1, maxFish);
-        maxFishPerCell = Mathf.Max(1, maxFishPerCell);
         maxCellActivationsPerUpdate = Mathf.Max(1, maxCellActivationsPerUpdate);
         visualScaleMultiplier = Mathf.Clamp(visualScaleMultiplier, 1f, 3.5f);
         visibilityScale = Mathf.Clamp(visibilityScale, 0.25f, 1.5f);

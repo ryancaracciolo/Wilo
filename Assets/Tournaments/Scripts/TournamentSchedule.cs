@@ -96,7 +96,7 @@ public static class TournamentSchedule
         return string.CompareOrdinal(nameA, nameB);
     }
 
-    /// <summary>"Sat · Aug 3 · 7:00 AM – 4:00 PM": the dated line for a schedule row.</summary>
+    /// <summary>"Sat · Jun 18 · 7:00 AM – 4:00 PM": the dated line for a schedule row.</summary>
     public static string WhenLabel(GameCalendar calendar, TournamentOccurrence occurrence)
     {
         if (!occurrence.IsValid)

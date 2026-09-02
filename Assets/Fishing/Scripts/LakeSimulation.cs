@@ -41,20 +41,25 @@ public class LakeSimulation : MonoBehaviour
 
     public float SurfaceY => conditions != null ? conditions.WaterHeight : 0f;
 
-    /// <summary>Lake-bed depth for fishing. Snags still show on sonar.</summary>
+    /// <summary>Bare lake-bed depth. Habitat and depth readouts stay on this:
+    /// a hole with a boulder in it is still a hole.</summary>
     public float GeometricDepthMeters(Vector3 world)
     {
         return conditions != null ? conditions.BedDepthMeters(world) : 0f;
     }
 
     /// <summary>
-    /// Depth to the shallowest thing a lure can touch, so rock and timber turn
-    /// into something to climb over rather than swim through. Habitat and depth
-    /// readouts stay on the bare bed: a hole with a boulder in it is still a hole.
+    /// Depth to the shallowest ground a fish or lure can rest on. Rock and
+    /// timber count, so neither swims through a boulder.
     /// </summary>
-    public float LureBottomMeters(Vector3 world)
+    public float GroundDepthMeters(Vector3 world)
     {
         return conditions != null ? conditions.GeometricDepthMeters(world) : 0f;
+    }
+
+    public float LureBottomMeters(Vector3 world)
+    {
+        return GroundDepthMeters(world);
     }
 
     public float DepthMeters(Vector3 world)
@@ -77,6 +82,7 @@ public class LakeSimulation : MonoBehaviour
         if (conditions != null)
         {
             float _ = conditions.WaterHeight;
+            conditions.GeometricDepthMeters(transform.position);
         }
 
         BuildCover();
@@ -147,7 +153,18 @@ public class LakeSimulation : MonoBehaviour
     /// <summary>Nearest cover standing inside the square around <paramref name="center"/>.</summary>
     public bool TryCoverInCell(Vector3 center, float halfSize, CoverKind kind, out Vector3 at)
     {
+        return TryCoverInCell(center, halfSize, kind, out at, out _);
+    }
+
+    public bool TryCoverInCell(
+        Vector3 center,
+        float halfSize,
+        CoverKind kind,
+        out Vector3 at,
+        out float radius)
+    {
         at = center;
+        radius = 0f;
         float px;
         float pz;
         if (!cover.TryClosestInRect(
@@ -159,7 +176,8 @@ public class LakeSimulation : MonoBehaviour
                 center.z + halfSize,
                 kind,
                 out px,
-                out pz))
+                out pz,
+                out radius))
             return false;
 
         at = new Vector3(px, center.y, pz);

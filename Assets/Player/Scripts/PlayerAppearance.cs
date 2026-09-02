@@ -124,6 +124,8 @@ public class PlayerAppearance : MonoBehaviour
                 vestRenderer = renderer;
             else if (name.IndexOf("hat", System.StringComparison.OrdinalIgnoreCase) >= 0)
                 hatRenderer = renderer;
+            else if (name == "FishingPole" || name == "FishingLine")
+                continue;
             else
                 bodies.Add(renderer);
         }

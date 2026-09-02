@@ -56,6 +56,7 @@ public class TournamentDirector : MonoBehaviour
 
     public event Action BagChanged;
     public event Action<TournamentResult> Finished;
+    public event Action<TournamentPhase> PhaseChanged;
 
     public TournamentPhase Phase { get; private set; } = TournamentPhase.Idle;
     public TournamentOccurrence Active => active;
@@ -297,7 +298,7 @@ public class TournamentDirector : MonoBehaviour
         TournamentDefinition def = active.Definition;
         if (def == null)
         {
-            Phase = TournamentPhase.Idle;
+            SetPhase(TournamentPhase.Idle);
             return;
         }
 
@@ -316,7 +317,7 @@ public class TournamentDirector : MonoBehaviour
                 return;
             }
 
-            Phase = TournamentPhase.AwaitingWeighIn;
+            SetPhase(TournamentPhase.AwaitingWeighIn);
             BagChanged?.Invoke();
             int interval = Mathf.Max(1, Mathf.RoundToInt(def.LatePenaltyIntervalMinutes));
             Notice?.Invoke($"Lines out. Weigh in at the camp by {GameCalendar.FormatHour(def.EndHour + def.ForfeitAfterHours)} or you're out. −{def.LatePenaltyPounds:0.#} lb every {interval} min.");
@@ -365,8 +366,8 @@ public class TournamentDirector : MonoBehaviour
             }
 
             active = occ;
-            Phase = TournamentPhase.Running;
             warned = false;
+            SetPhase(TournamentPhase.Running);
             bag.Reset(def.BagLimit);
             BagChanged?.Invoke();
             Notice?.Invoke($"{def.DisplayName} is underway. {def.FormatLabel} until {GameCalendar.FormatHour(def.EndHour)}.");
@@ -591,7 +592,7 @@ public class TournamentDirector : MonoBehaviour
         TournamentDefinition def = active.Definition;
         if (def == null)
         {
-            Phase = TournamentPhase.Idle;
+            SetPhase(TournamentPhase.Idle);
             return;
         }
 
@@ -663,7 +664,9 @@ public class TournamentDirector : MonoBehaviour
             DisplayName = def.DisplayName,
             FormatLabel = def.FormatLabel,
             DayIndex = active.DayIndex,
-            DateLabel = conditions.DateLabel,
+            DateLabel = conditions != null
+                ? conditions.Calendar.DateLabelFor(active.DayIndex)
+                : "",
             Place = place,
             Entrants = standings.Count,
             Fish = forfeited ? 0 : bag.Fish,
@@ -687,13 +690,22 @@ public class TournamentDirector : MonoBehaviour
         };
 
         history.Insert(0, result);
-        Phase = TournamentPhase.Idle;
         active = default;
         warned = false;
         bag.Reset(def.BagLimit);
+        SetPhase(TournamentPhase.Idle);
         BagChanged?.Invoke();
         Finished?.Invoke(result);
         SaveService.Instance?.Save();
+    }
+
+    void SetPhase(TournamentPhase next)
+    {
+        if (Phase == next)
+            return;
+
+        Phase = next;
+        PhaseChanged?.Invoke(Phase);
     }
 
     /// <summary>
