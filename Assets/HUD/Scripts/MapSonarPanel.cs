@@ -114,7 +114,7 @@ public class MapSonarPanel : VisualElement
         if (sonarAccum < 0.08f)
             return;
         sonarAccum = 0f;
-        sonar.Push(conditions.DepthFeet);
+        sonar.Push(conditions.BedFeet, conditions.RockRiseFeet);
         sonarDepth.text = $"{conditions.DepthFeet:0.0} ft";
     }
 

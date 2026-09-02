@@ -5,7 +5,8 @@ using UnityEngine;
 /// <summary>
 /// Activates habitat cells around the player/boat and returns fish to a
 /// pool once those cells leave a despawn buffer. Fast travel just swaps
-/// the active set; skipped cells never spawn.
+/// the active set. At the live cap a better cell can steal slots from
+/// weaker water so a log beside you is not left empty.
 /// Spawn rolls come from (world seed, calendar day, cell). Leave and return
 /// the same day and the cell is unchanged. A new day re-rolls who lives there;
 /// habitat still says whether the spot is generally good.
@@ -21,8 +22,8 @@ public class LocalFishPopulation : MonoBehaviour
     float activeRadius = 72f;
     [SerializeField, Tooltip("Must be larger than active radius so edge cells do not flicker.")]
     float despawnRadius = 96f;
-    [SerializeField, Tooltip("Panic ceiling only. Habitat density decides how many spawn below this.")]
-    int maxFish = 28;
+    [SerializeField, Tooltip("Live-fish ceiling. Better habitat can steal slots from weaker cells.")]
+    int maxFish = 22;
     [SerializeField] int maxCellActivationsPerUpdate = 6;
     [SerializeField] float updateInterval = 0.15f;
     [SerializeField] int prewarmPerSpecies = 8;
@@ -34,17 +35,20 @@ public class LocalFishPopulation : MonoBehaviour
     [SerializeField, Tooltip("Planar fade so distant bass do not read as a grid.")]
     float viewDistance = 48f;
     [SerializeField, Tooltip("TEMP: unhide every live fish and draw its weight. Turn off / delete when done scouting.")]
-    bool debugShowFish = true;
+    bool debugShowFish = false;
 
     readonly Dictionary<LakeCellId, List<FishAgent>> occupied = new Dictionary<LakeCellId, List<FishAgent>>();
+    readonly Dictionary<LakeCellId, float> ranks = new Dictionary<LakeCellId, float>();
     readonly HashSet<LakeCellId> empty = new HashSet<LakeCellId>();
     readonly Dictionary<LakeCellId, int> harvested = new Dictionary<LakeCellId, int>();
     readonly Dictionary<FishSpecies, Stack<FishAgent>> pools = new Dictionary<FishSpecies, Stack<FishAgent>>();
     readonly List<LakeCellId> scratchCells = new List<LakeCellId>();
     readonly List<(LakeCellId id, float dist)> candidates = new List<(LakeCellId, float)>();
+    readonly List<(LakeCellId id, float rank, float dist)> stealable = new List<(LakeCellId, float, float)>();
 
     Transform poolRoot;
     Vector3 lastOrigin;
+    Vector3 rankOrigin;
     float nextUpdateTime;
     int liveCount;
     int worldSeed;
@@ -272,25 +276,28 @@ public class LocalFishPopulation : MonoBehaviour
             }
         }
 
-        // Closest cells first. Density still decides how many fish a cell holds;
-        // ranking the whole ring by peak was letting far rock piles empty the
-        // nearby weed flats.
-        candidates.Sort(CompareDistance);
+        // Room to spare: closest first so the water under the boat fills.
+        // At the cap: wood/rock first so a log beside you can steal from
+        // thin open water instead of staying empty.
+        rankOrigin = origin;
+        if (liveCount >= maxFish)
+            candidates.Sort(CompareHotThenNear);
+        else
+            candidates.Sort(CompareDistance);
         int spawnBudget = maxCellActivationsPerUpdate;
         if (moved > cellSize)
             spawnBudget *= 3;
         int examineBudget = Mathf.Max(spawnBudget * 4, 16);
 
-        for (int i = 0; i < candidates.Count; i++)
+        for (int i = 0; i < candidates.Count && spawnBudget > 0 && examineBudget > 0; i++)
         {
-            if (liveCount >= maxFish || examineBudget <= 0)
-                break;
             examineBudget--;
-            if (!TryActivate(candidates[i].id, origin))
+            LakeCellId id = candidates[i].id;
+            if (liveCount >= maxFish && !TryYieldFor(id, origin))
+                continue;
+            if (!TryActivate(id, origin))
                 continue;
             spawnBudget--;
-            if (spawnBudget <= 0)
-                break;
         }
     }
 
@@ -317,6 +324,36 @@ public class LocalFishPopulation : MonoBehaviour
             empty.Remove(scratchCells[i]);
     }
 
+    /// <summary>
+    /// Free weaker occupied cells so a better one can spawn at the cap.
+    /// Incoming must beat a held cell by a margin so two similar rocks do not
+    /// swap every refresh.
+    /// </summary>
+    bool TryYieldFor(LakeCellId incoming, Vector3 origin)
+    {
+        int target = PlannedCount(incoming, origin, out float incomingRank, out _);
+        if (target <= 0)
+            return false;
+        if (liveCount + target <= maxFish)
+            return true;
+
+        stealable.Clear();
+        foreach (var pair in occupied)
+        {
+            if (!ranks.TryGetValue(pair.Key, out float held))
+                PlannedCount(pair.Key, origin, out held, out _);
+            if (incomingRank < held * 1.25f || incomingRank < held + 0.3f)
+                continue;
+            stealable.Add((pair.Key, held, DistanceToCell(origin, pair.Key)));
+        }
+
+        stealable.Sort(CompareStealable);
+        for (int i = 0; i < stealable.Count && liveCount + target > maxFish; i++)
+            ReleaseCell(stealable[i].id);
+
+        return liveCount + target <= maxFish;
+    }
+
     bool TryActivate(LakeCellId id, Vector3 origin)
     {
         IReadOnlyList<FishSpecies> species = lake.Species;
@@ -326,31 +363,7 @@ public class LocalFishPopulation : MonoBehaviour
             return false;
         }
 
-        float area = cellSize * cellSize;
-        float mean;
-        float peak;
-        SampleCellDensity(id, origin.y, out mean, out peak);
-        // Peak is the stump / rock in the cell. Mean is diluted by open water
-        // in the same 24 m square, so lean on peak or a lone boulder never
-        // holds more than one fish.
-        float expected = (mean * 0.40f + peak * 0.60f) * (area / 1000f);
-        Vector3 cellCenter = CellCenter(id, origin.y);
-        float half = cellSize * 0.5f;
-        if (peak >= 1.4f &&
-            (lake.TryCoverInCell(cellCenter, half, CoverKind.Rock, out _) ||
-             lake.TryCoverInCell(cellCenter, half, CoverKind.Wood, out _)))
-        {
-            // A 24 m cell's open water dilutes density so a lone boulder
-            // coin-flips one fish. Cover should hold a small group.
-            float coverHold = Mathf.Lerp(1.9f, 3.3f, Mathf.InverseLerp(1.4f, 6.5f, peak));
-            expected = Mathf.Max(expected, coverHold);
-        }
-        int target = StochasticRound(expected, Hash01(Hash(id, 3)));
-
-        // The roll is what the cell holds on an untouched day. Whatever came out
-        // of it today comes off the top, so a spot you worked over stays thin.
-        harvested.TryGetValue(id, out int taken);
-        target -= taken;
+        int target = PlannedCount(id, origin, out float expected, out float peak);
         if (target <= 0)
         {
             empty.Add(id);
@@ -428,8 +441,34 @@ public class LocalFishPopulation : MonoBehaviour
         }
 
         occupied[id] = spawned;
+        ranks[id] = expected;
         liveCount += spawned.Count;
         return true;
+    }
+
+    int PlannedCount(LakeCellId id, Vector3 origin, out float expected, out float peak)
+    {
+        SampleCellDensity(id, origin.y, out float mean, out peak);
+        // Peak is the stump / rock in the cell. Mean is diluted by open water
+        // in the same 24 m square, so lean on peak or a lone boulder never
+        // holds more than one fish.
+        expected = (mean * 0.40f + peak * 0.60f) * (cellSize * cellSize / 1000f);
+        Vector3 cellCenter = CellCenter(id, origin.y);
+        float half = cellSize * 0.5f;
+        bool hasRock = lake.TryCoverInCell(cellCenter, half, CoverKind.Rock, out _);
+        bool hasWood = lake.TryCoverInCell(cellCenter, half, CoverKind.Wood, out _);
+        if (peak >= 1.4f && (hasRock || hasWood))
+        {
+            float coverHold = Mathf.Lerp(1.5f, 2.6f, Mathf.InverseLerp(1.4f, 6.5f, peak));
+            if (hasRock)
+                coverHold *= 0.85f;
+            expected = Mathf.Max(expected, coverHold);
+        }
+
+        int target = StochasticRound(expected, Hash01(Hash(id, 3)));
+        harvested.TryGetValue(id, out int taken);
+        target -= taken;
+        return target;
     }
 
     public void Detach(FishAgent agent)
@@ -455,6 +494,7 @@ public class LocalFishPopulation : MonoBehaviour
             return;
 
         occupied.Remove(emptied.Value);
+        ranks.Remove(emptied.Value);
         empty.Add(emptied.Value);
     }
 
@@ -473,6 +513,7 @@ public class LocalFishPopulation : MonoBehaviour
             Release(fish[i]);
         liveCount -= fish.Count;
         occupied.Remove(id);
+        ranks.Remove(id);
     }
 
     void DespawnAll()
@@ -483,6 +524,7 @@ public class LocalFishPopulation : MonoBehaviour
         for (int i = 0; i < scratchCells.Count; i++)
             ReleaseCell(scratchCells[i]);
         empty.Clear();
+        ranks.Clear();
         liveCount = 0;
     }
 
@@ -751,6 +793,29 @@ public class LocalFishPopulation : MonoBehaviour
     static int CompareDistance((LakeCellId id, float dist) a, (LakeCellId id, float dist) b)
     {
         return a.dist.CompareTo(b.dist);
+    }
+
+    int CompareHotThenNear((LakeCellId id, float dist) a, (LakeCellId id, float dist) b)
+    {
+        bool aHot = CellHasStructure(a.id, rankOrigin);
+        bool bHot = CellHasStructure(b.id, rankOrigin);
+        if (aHot != bHot)
+            return aHot ? -1 : 1;
+        return a.dist.CompareTo(b.dist);
+    }
+
+    static int CompareStealable((LakeCellId id, float rank, float dist) a, (LakeCellId id, float rank, float dist) b)
+    {
+        int rankCmp = a.rank.CompareTo(b.rank);
+        return rankCmp != 0 ? rankCmp : b.dist.CompareTo(a.dist);
+    }
+
+    bool CellHasStructure(LakeCellId id, Vector3 origin)
+    {
+        Vector3 center = CellCenter(id, origin.y);
+        float half = cellSize * 0.5f;
+        return lake.TryCoverInCell(center, half, CoverKind.Wood, out _)
+            || lake.TryCoverInCell(center, half, CoverKind.Rock, out _);
     }
 
     void PushVisibility()

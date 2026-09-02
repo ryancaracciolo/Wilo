@@ -76,7 +76,10 @@ public class PlayerFishing : MonoBehaviour
     [SerializeField] Vector3 poleCastLean = new Vector3(0.95f, 0.12f, 0.5f);
 
     [Header("Catch")]
-    [SerializeField] Vector3 catchHoldLocal = new Vector3(-0.24f, 0.74f, 0.48f);
+    [SerializeField] Vector3 catchHoldLocal = new Vector3(-0.6f, 0.74f, 0.85f);
+
+    [SerializeField, Range(0f, 0.8f)]
+    float catchTowardCamera = 0.4f;
 
     /// <summary>Lower lip grip for two-hand holds so a long bass clears the hat.</summary>
     [SerializeField] Vector3 catchHoldTwoHandLocal = new Vector3(-0.18f, 0.54f, 0.28f);
@@ -87,14 +90,14 @@ public class PlayerFishing : MonoBehaviour
     /// </summary>
     [SerializeField] Vector3 catchHangLocal = new Vector3(0.72f, -0.52f, 0f);
 
-    [SerializeField, Range(0.3f, 0.6f)]
-    float catchLipAlong = 0.48f;
+    [SerializeField, Range(0.3f, 0.7f)]
+    float catchLipAlong = 0.6f;
     [SerializeField, Range(0f, 0.08f)]
-    float catchLipBelly = 0.02f;
-    [SerializeField, Range(0f, 0.12f)]
-    float catchPinchAlong = 0.03f;
-    [SerializeField, Range(0f, 0.08f)]
-    float catchPinchOut = 0.01f;
+    float catchLipBelly = 0.0275f;
+    [SerializeField, Range(0f, 0.2f)]
+    float catchPinchAlong = 0.12f;
+    [SerializeField, Range(0f, 0.35f)]
+    float catchPinchOut = 0.22f;
     [SerializeField, Range(0.2f, 0.9f)]
     float catchSupportAlong = 0.52f;
     [SerializeField, Range(0f, 0.22f)]
@@ -942,8 +945,7 @@ public class PlayerFishing : MonoBehaviour
 
     Vector3 CatchHoldPoint()
     {
-        bool twoHand = hooked != null && hooked.WantsTwoHandHold;
-        return transform.TransformPoint(twoHand ? catchHoldTwoHandLocal : catchHoldLocal);
+        return transform.TransformPoint(catchHoldLocal) + transform.forward * catchTowardCamera;
     }
 
     Vector3 CatchHangDirection()

@@ -40,7 +40,7 @@ public class DayCycle : MonoBehaviour
     [SerializeField] float curfewAfterDuskHours = 1f;
     [Tooltip("How long before curfew the player is warned.")]
     [SerializeField] float warningLeadHours = 1.5f;
-    [Tooltip("Hour the player wakes each morning. Tournament days may start earlier.")]
+    [Tooltip("Hour the player wakes each morning, including tournament days.")]
     [SerializeField, Range(0f, 24f)] float wakeHour = GameCalendar.NewGameHour;
 
     [Header("Dock")]
@@ -97,16 +97,11 @@ public class DayCycle : MonoBehaviour
     public float WarningHour => CurfewHour - Mathf.Max(0.25f, warningLeadHours);
     public float WakeHour => Mathf.Repeat(wakeHour, 24f);
 
-    /// <summary>
-    /// Registered tournament mornings start early enough to boat from the cabin
-    /// to the camp. Other days start at the authored wake hour.
-    /// </summary>
+    /// <summary>Every morning starts at the authored wake hour, including tournament days.</summary>
     public float WakeHourFor(int dayIndex)
     {
-        float wake = WakeHour;
-        if (director != null && director.TryGetWakeHour(dayIndex, out float tournamentWake))
-            wake = Mathf.Min(wake, tournamentWake);
-        return wake;
+        _ = dayIndex;
+        return WakeHour;
     }
 
     public bool PastWarning => SinceAnchor(CurrentHour) >= SinceAnchor(WarningHour);

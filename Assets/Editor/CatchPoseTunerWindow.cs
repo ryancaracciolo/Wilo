@@ -8,22 +8,14 @@ using UnityEngine;
 /// </summary>
 public class CatchPoseTunerWindow : EditorWindow
 {
-    static readonly string[] OneHandFields =
+    static readonly string[] HoldFields =
     {
         "catchHoldLocal",
+        "catchTowardCamera",
         "catchLipAlong",
         "catchLipBelly",
         "catchPinchAlong",
         "catchPinchOut"
-    };
-
-    static readonly string[] TwoHandFields =
-    {
-        "catchHoldTwoHandLocal",
-        "catchHangLocal",
-        "catchSupportAlong",
-        "catchSupportOut",
-        "catchSupportDown"
     };
 
     PlayerFishing player;
@@ -110,18 +102,11 @@ public class CatchPoseTunerWindow : EditorWindow
         playerSo.Update();
 
         EditorGUILayout.Space();
-        EditorGUILayout.LabelField("One-hand (small)", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("Hold", EditorStyles.boldLabel);
         EditorGUILayout.HelpBox(
-            "Hold XYZ is left / up / out from the chest. Raise Out if the fish back clips the body. Lip Along is how far the mouth sits from the mesh centre.",
+            "Used for every size. Hold XYZ is left / up / out from the chest. Lip Along is how far the mouth sits from the mesh centre.",
             MessageType.None);
-        DrawFields(OneHandFields);
-
-        EditorGUILayout.Space();
-        EditorGUILayout.LabelField("Two-hand (large)", EditorStyles.boldLabel);
-        EditorGUILayout.HelpBox(
-            "Support Out pushes the right palm toward the camera so it sits on the flank, not through the belly. Support Down tucks it under.",
-            MessageType.None);
-        DrawFields(TwoHandFields);
+        DrawFields(HoldFields);
 
         playerSo.ApplyModifiedProperties();
 
@@ -185,7 +170,7 @@ public class CatchPoseTunerWindow : EditorWindow
         Vector3 hold = t.TransformPoint(
             fish != null && fish.WantsTwoHandHold
                 ? SerializedVector("catchHoldTwoHandLocal", new Vector3(-0.18f, 0.54f, 0.28f))
-                : SerializedVector("catchHoldLocal", new Vector3(-0.24f, 0.74f, 0.48f)));
+                : SerializedVector("catchHoldLocal", new Vector3(-0.6f, 0.74f, 0.68f)));
 
         Handles.color = new Color(0.2f, 0.85f, 0.45f, 0.9f);
         Handles.SphereHandleCap(0, hold, Quaternion.identity, 0.04f, EventType.Repaint);

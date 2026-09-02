@@ -10,6 +10,7 @@ using UnityEngine.SceneManagement;
 public class WaterRipples : MonoBehaviour
 {
     public const int MaxRipples = 32;
+    const int ReservedRipples = 9;
 
     [SerializeField] WaterRippleProfile castRipple = WaterRippleProfile.Cast;
     [SerializeField] WaterRippleProfile reelRipple = WaterRippleProfile.Reel;
@@ -23,6 +24,7 @@ public class WaterRipples : MonoBehaviour
     readonly Vector4[] parameters = new Vector4[MaxRipples];
     int count;
     int writeIndex;
+    int reservedWrite;
 
     public static WaterRipples Instance
     {
@@ -66,6 +68,7 @@ public class WaterRipples : MonoBehaviour
     void OnEnable()
     {
         instance = this;
+        ExpireUnused();
         PushToShader();
     }
 
@@ -83,6 +86,11 @@ public class WaterRipples : MonoBehaviour
 
     public static void Emit(Vector3 worldPosition, WaterRippleKind kind, float scale = 1f)
     {
+        Emit(worldPosition, kind, scale, false);
+    }
+
+    public static void Emit(Vector3 worldPosition, WaterRippleKind kind, float scale, bool reserved)
+    {
         WaterRipples system = Instance;
         if (system == null)
             return;
@@ -90,12 +98,12 @@ public class WaterRipples : MonoBehaviour
         WaterRippleProfile profile = system.ProfileFor(kind);
         if (Mathf.Abs(scale - 1f) > 0.01f)
             profile = profile.Scaled(scale);
-        system.EmitProfile(worldPosition, profile);
+        system.EmitProfile(worldPosition, profile, reserved);
     }
 
     public static void Emit(Vector3 worldPosition, in WaterRippleProfile profile)
     {
-        Instance?.EmitProfile(worldPosition, profile);
+        Instance?.EmitProfile(worldPosition, profile, false);
     }
 
     WaterRippleProfile ProfileFor(WaterRippleKind kind)
@@ -110,19 +118,30 @@ public class WaterRipples : MonoBehaviour
         }
     }
 
-    void EmitProfile(Vector3 worldPosition, WaterRippleProfile profile)
+    void EmitProfile(Vector3 worldPosition, WaterRippleProfile profile, bool reserved)
     {
         int rings = Mathf.Max(1, profile.rings);
         for (int i = 0; i < rings; i++)
-            Push(worldPosition, profile, i * Mathf.Max(0f, profile.ringDelay));
+            Push(worldPosition, profile, i * Mathf.Max(0f, profile.ringDelay), reserved);
     }
 
-    void Push(Vector3 worldPosition, WaterRippleProfile profile, float ageOffset)
+    void Push(Vector3 worldPosition, WaterRippleProfile profile, float ageOffset, bool reserved)
     {
-        int index = writeIndex;
-        writeIndex = (writeIndex + 1) % MaxRipples;
+        int index;
+        if (reserved)
+        {
+            index = reservedWrite;
+            reservedWrite = (reservedWrite + 1) % ReservedRipples;
+        }
+        else
+        {
+            int ambient = MaxRipples - ReservedRipples;
+            index = ReservedRipples + writeIndex;
+            writeIndex = (writeIndex + 1) % ambient;
+        }
+
         if (count < MaxRipples)
-            count++;
+            count = MaxRipples;
 
         positions[index] = new Vector4(
             worldPosition.x,
@@ -143,6 +162,16 @@ public class WaterRipples : MonoBehaviour
         Shader.SetGlobalVectorArray("_WiloRippleParams", parameters);
         Shader.SetGlobalFloat("_WiloRippleCount", count);
         Shader.SetGlobalFloat("_WiloRippleTime", now);
+    }
+
+    void ExpireUnused()
+    {
+        float dead = Time.time - 30f;
+        for (int i = 0; i < MaxRipples; i++)
+        {
+            positions[i] = new Vector4(0f, 0f, dead, 0.05f);
+            parameters[i] = Vector4.zero;
+        }
     }
 }
 

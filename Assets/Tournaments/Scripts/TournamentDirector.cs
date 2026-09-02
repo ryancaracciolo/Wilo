@@ -39,6 +39,9 @@ public class TournamentDirector : MonoBehaviour
     [Tooltip("How early a registered morning starts, so there is time to boat from the cabin to the camp.")]
     [SerializeField, Min(0.25f)] float checkInLeadHours = 1.5f;
 
+    [Tooltip("Minutes after blast-off the player can still check in. Mornings always start at 6, so the run to camp is tight.")]
+    [SerializeField, Min(0f)] float lateCheckInHours = 0.5f;
+
     readonly List<TournamentOccurrence> registrations = new List<TournamentOccurrence>();
     readonly List<TournamentOccurrence> upcoming = new List<TournamentOccurrence>();
     readonly List<TournamentStanding> standings = new List<TournamentStanding>();
@@ -358,20 +361,23 @@ public class TournamentDirector : MonoBehaviour
             if (hour < def.StartHour)
                 continue;
 
-            registrations.RemoveAt(i);
-            if (hour >= def.EndHour || !AtSite)
+            if (hour < def.EndHour && AtSite)
             {
-                Notice?.Invoke($"You missed blast-off for {def.DisplayName}. Be at the camp by {GameCalendar.FormatHour(def.StartHour)} next time.");
-                continue;
+                registrations.RemoveAt(i);
+                active = occ;
+                warned = false;
+                SetPhase(TournamentPhase.Running);
+                bag.Reset(def.BagLimit);
+                BagChanged?.Invoke();
+                Notice?.Invoke($"{def.DisplayName} is underway. {def.FormatLabel} until {GameCalendar.FormatHour(def.EndHour)}.");
+                return;
             }
 
-            active = occ;
-            warned = false;
-            SetPhase(TournamentPhase.Running);
-            bag.Reset(def.BagLimit);
-            BagChanged?.Invoke();
-            Notice?.Invoke($"{def.DisplayName} is underway. {def.FormatLabel} until {GameCalendar.FormatHour(def.EndHour)}.");
-            return;
+            if (hour < def.EndHour && hour < def.StartHour + lateCheckInHours)
+                continue;
+
+            registrations.RemoveAt(i);
+            Notice?.Invoke($"You missed blast-off for {def.DisplayName}. Be at the camp by {GameCalendar.FormatHour(def.StartHour)} next time.");
         }
     }
 
@@ -465,12 +471,22 @@ public class TournamentDirector : MonoBehaviour
     /// <summary>True when another event is already entered on this calendar day.</summary>
     public bool HasRegistrationOn(int dayIndex)
     {
+        return TryGetEntryOn(dayIndex, out _);
+    }
+
+    /// <summary>The entry booked on this calendar day, if any.</summary>
+    public bool TryGetEntryOn(int dayIndex, out TournamentOccurrence occurrence)
+    {
         for (int i = 0; i < registrations.Count; i++)
         {
-            if (registrations[i].DayIndex == dayIndex)
-                return true;
+            if (registrations[i].DayIndex != dayIndex || !registrations[i].IsValid)
+                continue;
+
+            occurrence = registrations[i];
+            return true;
         }
 
+        occurrence = default;
         return false;
     }
 

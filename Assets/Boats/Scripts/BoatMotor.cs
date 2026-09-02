@@ -118,11 +118,6 @@ public class BoatMotor : MonoBehaviour
         currentSpeed = 0f;
     }
 
-    public bool WouldBlock(Vector3 nextPosition)
-    {
-        return IsBlocked(nextPosition);
-    }
-
     void OnEnable()
     {
         CacheWaterHeight();
@@ -211,18 +206,25 @@ public class BoatMotor : MonoBehaviour
         if (distance < 0.0001f)
             return;
 
+        float spacing = aiControlled ? wakeSpacing * 2.4f : wakeSpacing;
         wakeTraveled += distance;
-        if (wakeTraveled < wakeSpacing)
+        if (wakeTraveled < spacing)
             return;
 
         wakeTraveled = 0f;
+        Vector3 stern = transform.position + transform.forward * 1.7f;
+        if (aiControlled)
+        {
+            WaterRipples.Emit(stern, WaterRippleKind.Boat, 0.55f);
+            return;
+        }
+
         float speedBlend = Mathf.Clamp01(Mathf.Abs(currentSpeed) / maxSpeed);
         float width = Mathf.Lerp(0.35f, 0.7f, speedBlend);
-        Vector3 stern = transform.position + transform.forward * 1.7f;
         Vector3 side = transform.right * width;
-        WaterRipples.Emit(stern + side, WaterRippleKind.Boat);
-        WaterRipples.Emit(stern - side, WaterRippleKind.Boat);
-        WaterRipples.Emit(stern + transform.forward * 0.55f, WaterRippleKind.Boat);
+        WaterRipples.Emit(stern + side, WaterRippleKind.Boat, 1f, true);
+        WaterRipples.Emit(stern - side, WaterRippleKind.Boat, 1f, true);
+        WaterRipples.Emit(stern + transform.forward * 0.55f, WaterRippleKind.Boat, 1f, true);
     }
 
     bool IsBlocked(Vector3 nextPosition)
@@ -245,6 +247,8 @@ public class BoatMotor : MonoBehaviour
             return false;
 
         if (hit.transform.root == transform)
+            return false;
+        if (aiControlled && hit.collider.GetComponentInParent<BoatMotor>() != null)
             return false;
         if (hit.collider.GetComponent<CharacterController>() != null)
             return false;

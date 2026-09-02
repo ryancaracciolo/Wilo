@@ -3,9 +3,9 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// Spawns the decorative tournament field when the player is actually in an
-/// event, then tears it down at weigh-in or forfeit. Boats are the player's
-/// hull with recolored copies of the player on them.
+/// Spawns the decorative tournament field on a morning the player is entered,
+/// stages them at camp through blast-off, then tears them down at weigh-in
+/// or forfeit. Boats are the player's hull with recolored copies of the player.
 /// </summary>
 public class TournamentBoatDirector : MonoBehaviour
 {
@@ -81,6 +81,9 @@ public class TournamentBoatDirector : MonoBehaviour
 
     public float Hour => conditions != null ? conditions.Hour : 0f;
 
+    /// <summary>Rivals stay put at camp until the player actually blasts off.</summary>
+    public bool MayLeave => director != null && director.IsRunning;
+
     void OnEnable()
     {
         Resolve();
@@ -100,8 +103,7 @@ public class TournamentBoatDirector : MonoBehaviour
     {
         Resolve();
         Hook();
-        if (director != null && director.AwaitingWeighIn)
-            RecallAll();
+        Sync();
     }
 
     void OnPhaseChanged(TournamentPhase _)
@@ -111,28 +113,42 @@ public class TournamentBoatDirector : MonoBehaviour
 
     void Sync()
     {
-        if (director == null || director.Phase == TournamentPhase.Idle)
+        if (!TryOccurrence(out TournamentOccurrence occurrence))
         {
             Despawn();
             return;
         }
 
-        SpawnField();
-        if (director.AwaitingWeighIn)
+        SpawnField(occurrence);
+        if (director != null && director.AwaitingWeighIn)
             RecallAll();
     }
 
-    void SpawnField()
+    bool TryOccurrence(out TournamentOccurrence occurrence)
+    {
+        occurrence = default;
+        if (director == null)
+            return false;
+        if (director.Active.IsValid)
+        {
+            occurrence = director.Active;
+            return true;
+        }
+
+        if (conditions == null)
+            return false;
+        return director.TryGetEntryOn(conditions.DayIndex, out occurrence);
+    }
+
+    void SpawnField(TournamentOccurrence occurrence)
     {
         if (field.Count > 0)
             return;
-        if (director == null || !director.Active.IsValid)
+        if (!occurrence.IsValid)
             return;
 
         Resolve();
         CacheWaterSide();
-
-        TournamentOccurrence occurrence = director.Active;
         TournamentDefinition def = occurrence.Definition;
         TournamentField.CopyNames(occurrence, names);
 
@@ -209,21 +225,18 @@ public class TournamentBoatDirector : MonoBehaviour
 
         Vector3 origin = terrain.transform.position;
         Vector3 size = terrain.terrainData.size;
-        var rng = new System.Random(Random.Range(int.MinValue, int.MaxValue));
+        var rng = new System.Random(UnityEngine.Random.Range(int.MinValue, int.MaxValue));
         Vector3 camp = site != null ? site.DockPosition : origin + size * 0.5f;
         Vector3 from = asker != null ? asker.transform.position : camp;
-        Vector3 player = PlayerHull();
 
-        for (int i = 0; i < 28; i++)
+        for (int i = 0; i < 48; i++)
         {
             float x = origin.x + 40f + (float)rng.NextDouble() * Mathf.Max(80f, size.x - 80f);
             float z = origin.z + 40f + (float)rng.NextDouble() * Mathf.Max(80f, size.z - 80f);
             Vector3 candidate = new Vector3(x, 0f, z);
-            if (!IsNavigable(candidate, minCruiseDepth))
+            if (DepthAt(candidate) < minCruiseDepth)
                 continue;
             if (DistanceXZ(candidate, camp) < 70f)
-                continue;
-            if (DistanceXZ(candidate, player) < 22f)
                 continue;
             if (!placeHere && DistanceXZ(candidate, from) < 40f)
                 continue;
@@ -255,7 +268,7 @@ public class TournamentBoatDirector : MonoBehaviour
             float row = 16f + (index % 4) * 5.5f + attempt * 2.4f;
             float side = ((index / 4) - 1.2f) * campSpacing + (attempt % 3 - 1) * 2.2f;
             Vector3 candidate = dock + waterSide * row + along * side;
-            if (!IsNavigable(candidate, minCampDepth))
+            if (DepthAt(candidate) < minCampDepth)
                 continue;
             if (TooCloseToField(candidate, campSpacing * 0.75f, asker))
                 continue;
@@ -265,18 +278,14 @@ public class TournamentBoatDirector : MonoBehaviour
         }
 
         spot = SnapHeight(dock + waterSide * 18f);
-        return IsNavigable(spot, minCampDepth * 0.6f);
+        return DepthAt(spot) >= minCampDepth * 0.4f;
     }
 
-    public bool IsNavigable(Vector3 world, float minDepth = -1f)
+    float DepthAt(Vector3 world)
     {
-        if (minDepth < 0f)
-            minDepth = minCruiseDepth;
-
-        float depth = conditions != null
-            ? conditions.GeometricDepthMeters(world)
-            : lake != null ? lake.GeometricDepthMeters(world) : 0f;
-        return depth >= minDepth;
+        if (conditions != null)
+            return conditions.BedDepthMeters(world);
+        return lake != null ? lake.GeometricDepthMeters(world) : 0f;
     }
 
     GameObject ResolveBoatTemplate()
@@ -391,7 +400,7 @@ public class TournamentBoatDirector : MonoBehaviour
         {
             if (k > 0)
                 candidate = dock + waterSide * (12f + k * 3f) + along * ((float)rng.NextDouble() - 0.5f) * 22f;
-            if (!IsNavigable(candidate, minCampDepth))
+            if (DepthAt(candidate) < minCampDepth)
                 continue;
             if (DistanceXZ(candidate, player) < 7f)
                 continue;
@@ -464,9 +473,14 @@ public class TournamentBoatDirector : MonoBehaviour
 
     static float DistanceXZ(Vector3 a, Vector3 b)
     {
-        a.y = 0f;
-        b.y = 0f;
-        return Vector3.Distance(a, b);
+        return Mathf.Sqrt(DistanceSqXZ(a, b));
+    }
+
+    static float DistanceSqXZ(Vector3 a, Vector3 b)
+    {
+        float dx = a.x - b.x;
+        float dz = a.z - b.z;
+        return dx * dx + dz * dz;
     }
 
     static int Seed(string id, int dayIndex)

@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4e7a1c8b2d9f46a3b5c0e8d1a6f3b924, type: 3}
   m_Name: Habitat_Wilo
   m_EditorClassIdentifier: Assembly-CSharp::HabitatProfile
-  baseFishPerThousandSqMeters: 2.4
+  baseFishPerThousandSqMeters: 1.92
   maxFishPerThousandSqMeters: 10
   activity: 0.5
   openWaterScatter: 0.055
@@ -46,6 +46,7 @@ MonoBehaviour:
   trophyTailBlend: 0
   qualityChance: 0.13
   trophyChance: 0.08
+  typicalSizeScale: 0.85
   rockPeakDepthFeet: 20
   rockPeakWidthFeet: 16
   rockTrophyDepthFeet: 42
@@ -60,14 +61,14 @@ MonoBehaviour:
   - species: {fileID: 11400000, guid: 1c8e891a535284035976b95ff485fd14, type: 2}
     idealDepthFeet: 10
     smallIdealDepthFeet: 5
-    largeIdealDepthFeet: 13
+    largeIdealDepthFeet: 16
     depthSizePower: 1
-    depthComfortFeet: 8
+    depthComfortFeet: 9
     minDepthFeet: 2
     maxDepthFeet: 35
     dropoff: 0.7
     point: 0.75
-    rock: 0.85
+    rock: 1.06
     wood: 2
     vegetation: 1.45
     minPounds: 0.5
@@ -78,6 +79,7 @@ MonoBehaviour:
     woodSizeBoost: 0
     rockSizeBoost: 0.36
     rockDepthEven: 0.35
+    deepOccupancyBoost: 0.1
   - species: {fileID: 11400000, guid: 6698b3b9170324a3dac0e050c5a90b89, type: 2}
     idealDepthFeet: 25
     smallIdealDepthFeet: 14
@@ -88,7 +90,7 @@ MonoBehaviour:
     maxDepthFeet: 60
     dropoff: 1.55
     point: 1.7
-    rock: 2.4
+    rock: 2.04
     wood: 0.18
     vegetation: 0.12
     minPounds: 0.5
@@ -99,3 +101,4 @@ MonoBehaviour:
     woodSizeBoost: 0
     rockSizeBoost: 0.4
     rockDepthEven: 0.75
+    deepOccupancyBoost: 0

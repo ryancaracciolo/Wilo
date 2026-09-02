@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 using UnityEngine.UIElements;
 
 /// <summary>
@@ -69,6 +71,13 @@ public class IntroHud : MonoBehaviour
 
     [SerializeField] StyleSheet styleSheet;
     [SerializeField] GameObject playerPrefab;
+    [SerializeField] Material dockWood;
+    [SerializeField] Material lakeWater;
+    [SerializeField] Material skybox;
+    [SerializeField] GameObject treeA;
+    [SerializeField] GameObject treeB;
+    [SerializeField] GameObject grass;
+    [SerializeField] GameObject rock;
 
     UIDocument document;
     VisualElement root;
@@ -88,12 +97,14 @@ public class IntroHud : MonoBehaviour
     PlayerAppearance previewLook;
     Transform previewRoot;
     GameObject porch;
+    readonly List<Material> runtimeMats = new List<Material>();
     float previewYaw = 18f;
     static readonly Vector3 PreviewStand = new Vector3(0.85f, 0f, 0f);
-    static readonly Vector3 CameraPos = new Vector3(-0.55f, 1.50f, 4.10f);
-    static readonly Vector3 CameraAim = new Vector3(0.85f, 0.72f, 0f);
+    static readonly Vector3 CameraPos = new Vector3(-0.28f, 1.38f, 4.35f);
+    static readonly Vector3 CameraAim = new Vector3(1.05f, 0.66f, -0.35f);
     bool dragging;
     float lastDragX;
+    float nextRipple;
 
     void Awake()
     {
@@ -120,12 +131,19 @@ public class IntroHud : MonoBehaviour
         previewRoot = null;
         previewLook = null;
         porch = null;
+        for (int i = 0; i < runtimeMats.Count; i++)
+        {
+            if (runtimeMats[i] != null)
+                Destroy(runtimeMats[i]);
+        }
+        runtimeMats.Clear();
     }
 
     void Update()
     {
         HudInput.Tick();
         SpinPreview();
+        TickRipples();
     }
 
     void Build()
@@ -160,6 +178,10 @@ public class IntroHud : MonoBehaviour
         hint.AddToClassList("hud-intro-hint");
         stage.Add(hint);
 
+        var wash = new VisualElement();
+        wash.AddToClassList("hud-intro-wash");
+        wash.pickingMode = PickingMode.Ignore;
+        root.Add(wash);
         root.Add(card);
         root.Add(stage);
         card.RegisterCallback<GeometryChangedEvent>(_ => FrameCamera());
@@ -185,14 +207,12 @@ public class IntroHud : MonoBehaviour
 
     void FillHomeCard()
     {
-        Label title = HudUi.Title("Welcome to Willow Lake");
-        title.AddToClassList("hud-intro-title");
-        cardBody.Add(title);
-        cardBody.Add(HudUi.Muted("Pick up where you left off, or start a new lake."));
+        AddWelcome("Pick up where you left off, or start a new lake.");
 
         var saved = new VisualElement();
         saved.AddToClassList("hud-section");
-        saved.Add(HudUi.Muted("Your lakes"));
+        saved.AddToClassList("hud-intro-section");
+        saved.Add(Kicker("Your lakes"));
 
         List<LakeSlot> slots = SortedSlots();
         for (int i = 0; i < slots.Count; i++)
@@ -213,14 +233,12 @@ public class IntroHud : MonoBehaviour
 
     void FillCreateCard()
     {
-        Label title = HudUi.Title("Welcome to Willow Lake");
-        title.AddToClassList("hud-intro-title");
-        cardBody.Add(title);
-        cardBody.Add(HudUi.Muted("Pick your lake, sign your name, and dress for the water."));
+        AddWelcome("Pick your lake, sign your name, and dress for the water.");
 
         var lake = new VisualElement();
         lake.AddToClassList("hud-section");
-        lake.Add(HudUi.Muted("Lake"));
+        lake.AddToClassList("hud-intro-section");
+        lake.Add(Kicker("Lake"));
         lakeRow = HudUi.Row();
         lakeRow.AddToClassList("hud-choice-row");
         lake.Add(lakeRow);
@@ -232,7 +250,8 @@ public class IntroHud : MonoBehaviour
 
         var name = new VisualElement();
         name.AddToClassList("hud-section");
-        name.Add(HudUi.Muted("Your name"));
+        name.AddToClassList("hud-intro-section");
+        name.Add(Kicker("Your name"));
         nameError = HudUi.Muted("The lake should know what to call you.");
         nameError.style.display = DisplayStyle.None;
         nameField = HudUi.NameField("", PlayerProgress.MaxNameLength, TryCreate, autoFocus: false);
@@ -242,7 +261,8 @@ public class IntroHud : MonoBehaviour
 
         var look = new VisualElement();
         look.AddToClassList("hud-section");
-        look.Add(HudUi.Muted("Your look"));
+        look.AddToClassList("hud-intro-section");
+        look.Add(Kicker("Your look"));
         look.Add(SwatchBlock("Skin", out skinRow));
         look.Add(SwatchBlock("Hat", out hatRow));
         look.Add(SwatchBlock("Vest", out vestRow));
@@ -274,6 +294,24 @@ public class IntroHud : MonoBehaviour
         row.Add(HudUi.TextButton("Continue", () => ContinueSlot(slot), true));
         row.RegisterCallback<ClickEvent>(_ => PreviewSlot(slot));
         return row;
+    }
+
+    void AddWelcome(string lead)
+    {
+        Label title = HudUi.Title("Welcome to Willow Lake");
+        title.AddToClassList("hud-intro-title");
+        cardBody.Add(title);
+
+        Label copy = HudUi.Muted(lead);
+        copy.AddToClassList("hud-intro-lead");
+        cardBody.Add(copy);
+    }
+
+    static Label Kicker(string text)
+    {
+        Label label = HudUi.Muted(text);
+        label.AddToClassList("hud-intro-kicker");
+        return label;
     }
 
     static VisualElement SwatchBlock(string label, out VisualElement row)
@@ -419,6 +457,9 @@ public class IntroHud : MonoBehaviour
         var leftover = GameObject.Find("PreviewAngler");
         if (leftover != null)
             Destroy(leftover);
+        var oldPorch = GameObject.Find("IntroPorch");
+        if (oldPorch != null)
+            Destroy(oldPorch);
 
         var instance = Instantiate(playerPrefab);
         instance.name = "PreviewAngler";
@@ -442,8 +483,13 @@ public class IntroHud : MonoBehaviour
         if (cam == null)
             return;
 
-        cam.fieldOfView = 40f;
+        cam.fieldOfView = 38f;
         cam.nearClipPlane = 0.1f;
+        cam.clearFlags = CameraClearFlags.Skybox;
+        cam.farClipPlane = 80f;
+        var extra = cam.GetComponent<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>();
+        if (extra != null)
+            extra.requiresDepthOption = CameraOverrideOption.On;
 
         Vector3 look = CameraAim;
         float leftFrac = CardRightAsScreenFraction();
@@ -503,22 +549,134 @@ public class IntroHud : MonoBehaviour
         if (porch != null)
             Destroy(porch);
 
-        porch = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-        porch.name = "IntroPorch";
-        porch.transform.SetPositionAndRotation(new Vector3(0.85f, -0.04f, 0f), Quaternion.identity);
-        porch.transform.localScale = new Vector3(3.4f, 0.04f, 3.4f);
-        var renderer = porch.GetComponent<Renderer>();
-        if (renderer != null)
-        {
-            var material = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-            material.SetColor("_BaseColor", new Color(0.78f, 0.70f, 0.50f));
-            material.SetFloat("_Smoothness", 0.12f);
-            renderer.sharedMaterial = material;
-        }
+        porch = new GameObject("IntroPorch");
+        Material wood = dockWood != null ? dockWood : LitColor(new Color(0.72f, 0.58f, 0.38f), 0.1f);
+        Material water = lakeWater != null ? lakeWater : LitColor(new Color(0.22f, 0.48f, 0.58f), 0.72f);
+        Material sand = LitColor(new Color(0.78f, 0.70f, 0.48f), 0.08f);
+        Material grassMat = LitColor(new Color(0.42f, 0.56f, 0.30f), 0.06f);
+        Material hill = LitColor(new Color(0.36f, 0.48f, 0.32f), 0.04f);
 
-        var collider = porch.GetComponent<Collider>();
+        Box("Deck", new Vector3(0.85f, -0.06f, 0.25f), new Vector3(4.8f, 0.1f, 3.8f), wood);
+        Box("Apron", new Vector3(0.85f, -0.18f, -1.55f), new Vector3(4.4f, 0.08f, 0.55f), wood);
+        Piling(-1.15f, -1.35f);
+        Piling(2.85f, -1.35f);
+        Piling(-1.15f, 1.75f);
+        Piling(2.85f, 1.75f);
+        Piling(0.85f, -1.45f);
+
+        var surface = Box("Surface", new Vector3(2.4f, -0.34f, -8.5f), new Vector3(48f, 0.04f, 28f), water);
+        if (surface.GetComponent<WaterRipples>() == null)
+            surface.AddComponent<WaterRipples>();
+
+        Box("NearBed", new Vector3(1.2f, -0.72f, -2.2f), new Vector3(9f, 0.5f, 4.2f), sand);
+        Box("Bank", new Vector3(7.5f, -0.15f, -11.5f), new Vector3(22f, 1.4f, 8f), grassMat);
+        Box("FarHill", new Vector3(-4f, 0.4f, -18f), new Vector3(16f, 3.2f, 6f), hill);
+        Box("RightHill", new Vector3(10.5f, 0.12f, -15.2f), new Vector3(11f, 1.55f, 5.2f), hill);
+
+        Plant(treeA, new Vector3(4.6f, -0.2f, -6.2f), 22f, 1.15f);
+        Plant(treeB, new Vector3(7.2f, -0.15f, -9.4f), 198f, 1.45f);
+        Plant(treeA, new Vector3(10.4f, 0.1f, -13.2f), 74f, 1.8f);
+        Plant(treeB, new Vector3(-2.8f, 0.2f, -16.5f), 310f, 1.7f);
+        Plant(treeA, new Vector3(17.6f, -0.35f, -20.8f), 140f, 1.7f);
+        Plant(grass, new Vector3(5.1f, -0.18f, -7.4f), 40f, 1.3f);
+        Plant(grass, new Vector3(6.6f, -0.12f, -8.8f), 210f, 1.5f);
+        Plant(grass, new Vector3(8.8f, -0.05f, -11.2f), 88f, 1.7f);
+        Plant(rock, new Vector3(3.4f, -0.28f, -3.6f), 16f, 0.85f);
+        Plant(rock, new Vector3(4.8f, -0.22f, -5.1f), 122f, 1.15f);
+
+        var fill = new GameObject("FillLight");
+        fill.transform.SetParent(porch.transform, false);
+        fill.transform.rotation = Quaternion.Euler(12f, 148f, 0f);
+        var light = fill.AddComponent<Light>();
+        light.type = LightType.Directional;
+        light.color = new Color(0.70f, 0.82f, 0.95f);
+        light.intensity = 0.32f;
+        light.shadows = LightShadows.None;
+
+        ApplyAtmosphere();
+        nextRipple = 0.6f;
+    }
+
+    void Piling(float x, float z)
+    {
+        Material wood = dockWood != null ? dockWood : LitColor(new Color(0.52f, 0.40f, 0.26f), 0.08f);
+        Box("Piling", new Vector3(x, -0.55f, z), new Vector3(0.16f, 0.95f, 0.16f), wood);
+    }
+
+    void Plant(GameObject prefab, Vector3 pos, float yaw, float scale)
+    {
+        if (prefab == null || porch == null)
+            return;
+
+        var instance = Instantiate(prefab, porch.transform);
+        instance.transform.SetPositionAndRotation(pos, Quaternion.Euler(0f, yaw, 0f));
+        instance.transform.localScale = Vector3.one * scale;
+        var colliders = instance.GetComponentsInChildren<Collider>();
+        for (int i = 0; i < colliders.Length; i++)
+            Destroy(colliders[i]);
+    }
+
+    GameObject Box(string name, Vector3 pos, Vector3 scale, Material material)
+    {
+        var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        go.name = name;
+        go.transform.SetParent(porch.transform, false);
+        go.transform.SetPositionAndRotation(pos, Quaternion.identity);
+        go.transform.localScale = scale;
+        var renderer = go.GetComponent<Renderer>();
+        if (renderer != null)
+            renderer.sharedMaterial = material;
+        var collider = go.GetComponent<Collider>();
         if (collider != null)
             Destroy(collider);
+        return go;
+    }
+
+    Material LitColor(Color color, float smoothness)
+    {
+        var shader = Shader.Find("Universal Render Pipeline/Lit");
+        if (shader == null)
+            shader = Shader.Find("Sprites/Default");
+        var material = new Material(shader);
+        if (material.HasProperty("_BaseColor"))
+            material.SetColor("_BaseColor", color);
+        else
+            material.color = color;
+        if (material.HasProperty("_Smoothness"))
+            material.SetFloat("_Smoothness", smoothness);
+        runtimeMats.Add(material);
+        return material;
+    }
+
+    void ApplyAtmosphere()
+    {
+        RenderSettings.fog = true;
+        RenderSettings.fogMode = FogMode.Exponential;
+        RenderSettings.fogColor = new Color(0.70f, 0.83f, 0.90f);
+        RenderSettings.fogDensity = 0.028f;
+        RenderSettings.ambientMode = AmbientMode.Trilight;
+        RenderSettings.ambientSkyColor = new Color(0.62f, 0.76f, 0.88f);
+        RenderSettings.ambientEquatorColor = new Color(0.52f, 0.66f, 0.70f);
+        RenderSettings.ambientGroundColor = new Color(0.26f, 0.24f, 0.16f);
+        if (skybox != null)
+            RenderSettings.skybox = skybox;
+    }
+
+    void TickRipples()
+    {
+        if (porch == null)
+            return;
+
+        nextRipple -= Time.deltaTime;
+        if (nextRipple > 0f)
+            return;
+
+        nextRipple = UnityEngine.Random.Range(2.4f, 4.8f);
+        var point = new Vector3(
+            UnityEngine.Random.Range(-1.5f, 7f),
+            -0.34f,
+            UnityEngine.Random.Range(-10f, -2f));
+        WaterRipples.Emit(point, WaterRippleKind.Wade, 0.7f);
     }
 
     void SpinPreview()

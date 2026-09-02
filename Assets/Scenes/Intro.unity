@@ -151,6 +151,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::IntroHud
   styleSheet: {fileID: 7433441132597879392, guid: de101e0cba8944505ae19a96378d09e0, type: 3}
   playerPrefab: {fileID: 3260208116575933819, guid: 79ab3dba2c7c642848489024516c01cf, type: 3}
+  dockWood: {fileID: 2100000, guid: 14a81f437425a4639b1a2646981c58f6, type: 2}
+  lakeWater: {fileID: 2100000, guid: a0c66eced0dc14a0885af217e3964fb3, type: 2}
+  skybox: {fileID: 2100000, guid: 63c7f212f60aadc47945b935dc40e7c0, type: 2}
+  treeA: {fileID: 3416269096930444913, guid: de3037cfb4ab4b941a9215be6e275b2f, type: 3}
+  treeB: {fileID: 3402094146946022364, guid: d58a349f603e85943b3ce9ef551a0031, type: 3}
+  grass: {fileID: 1843614970322644868, guid: 4babf72e1cf36474793c478cac2463ab, type: 3}
+  rock: {fileID: 3656622363274963652, guid: 25b9f682754946d46bd742dd2f3fcdea, type: 3}
 --- !u!114 &945690049
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -225,7 +232,7 @@ Camera:
   m_GameObject: {fileID: 1434166312}
   m_Enabled: 1
   serializedVersion: 2
-  m_ClearFlags: 2
+  m_ClearFlags: 1
   m_BackGroundColor: {r: 0.62, g: 0.8, b: 0.86, a: 1}
   m_projectionMatrixMode: 1
   m_GateFitMode: 2

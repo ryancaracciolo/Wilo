@@ -16,6 +16,7 @@ public class GameHud : MonoBehaviour
     [SerializeField] WorldConditions conditions;
     [SerializeField] DayCycle dayCycle;
     [SerializeField] TournamentDirector director;
+    [SerializeField] TournamentBoatDirector boatDirector;
     [SerializeField] PlayerProgress progress;
     [SerializeField] TackleBox tackle;
 
@@ -93,8 +94,8 @@ public class GameHud : MonoBehaviour
             director = GetComponent<TournamentDirector>() ?? gameObject.AddComponent<TournamentDirector>();
         if (GetComponent<HudCuePresenter>() == null)
             gameObject.AddComponent<HudCuePresenter>();
-        if (GetComponent<TournamentBoatDirector>() == null)
-            gameObject.AddComponent<TournamentBoatDirector>();
+        if (boatDirector == null)
+            boatDirector = GetComponent<TournamentBoatDirector>() ?? gameObject.AddComponent<TournamentBoatDirector>();
     }
 
     void OnEnable()
@@ -153,7 +154,6 @@ public class GameHud : MonoBehaviour
             director.BagChanged -= RefreshTournamentChip;
             director.Finished -= ShowTournamentResult;
         }
-
         CloseLurePicker();
         HudInput.Reset();
         HudCues.Reset();
@@ -792,9 +792,8 @@ public class GameHud : MonoBehaviour
         Label nameLabel = HudUi.Title(name);
         nameLabel.AddToClassList("hud-profile-name");
         identity.Add(nameLabel);
-        identity.Add(HudUi.Muted(progress != null && progress.HasName
-            ? LakeChoice.DisplayName(SaveService.Instance != null ? SaveService.Instance.Player.selectedLake : LakeChoice.Willow)
-            : "Needed on the tournament board"));
+        identity.Add(HudUi.Muted(LakeChoice.DisplayName(
+            SaveService.Instance != null ? SaveService.Instance.Player.selectedLake : LakeChoice.Willow)));
         hero.Add(identity);
 
         if (progress != null)
@@ -1237,11 +1236,7 @@ public class GameHud : MonoBehaviour
         {
             actions.Add(HudUi.TextButton(def.EntryFee > 0 ? $"Enter · ${def.EntryFee}" : "Enter", () =>
             {
-                // The board is where a name first matters, so that is where it is asked for.
-                if (progress != null && !progress.HasName)
-                    OpenSignUpSheet(occurrence);
-                else
-                    RegisterFor(occurrence);
+                RegisterFor(occurrence);
             }, true));
         }
 
@@ -1316,20 +1311,6 @@ public class GameHud : MonoBehaviour
         body.Add(actions);
 
         ShowModal();
-    }
-
-    void OpenSignUpSheet(TournamentOccurrence occurrence)
-    {
-        TournamentDefinition def = occurrence.Definition;
-        BuildNameCard(
-            "Sign-up sheet",
-            def != null
-                ? $"The {def.DisplayName} wants a name for the board."
-                : "The board wants a name.",
-            "",
-            def != null && def.EntryFee > 0 ? $"Sign in · ${def.EntryFee}" : "Sign in",
-            OpenTournaments,
-            () => RegisterFor(occurrence));
     }
 
     void OpenRenameSheet()

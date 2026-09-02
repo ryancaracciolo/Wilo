@@ -106,6 +106,13 @@ public class WorldConditions : MonoBehaviour
     public static int StructureLayer => LayerMask.NameToLayer(StructureLayerName);
     public static int StructureMask => LayerMask.GetMask(StructureLayerName);
     public float DepthFeet { get; private set; }
+
+    /// <summary>Lake-bed depth with rock and timber ignored. Sonar sand uses this.</summary>
+    public float BedFeet { get; private set; }
+
+    /// <summary>How far a rock stands above the bed, in gameplay feet. 0 if none.</summary>
+    public float RockRiseFeet { get; private set; }
+
     public float BoatSpeedMph { get; private set; }
     public bool OnBoat { get; private set; }
     public bool OverWater { get; private set; }
@@ -375,9 +382,14 @@ public class WorldConditions : MonoBehaviour
             ? OccupiedBoat.transform.right
             : Vector3.right;
 
-        float geometric = GeometricDepthMeters(sampleAt, beamRight, OnBoat ? 1.1f : 0f);
+        float beam = OnBoat ? 1.1f : 0f;
+        float geometric = GeometricDepthMeters(sampleAt, beamRight, beam);
         OverWater = geometric > 0.05f;
         DepthFeet = Mathf.Max(0f, ToGameplayDepth(geometric) * 3.28084f);
+        float bedMeters = SampleDepth(sampleAt, beamRight, beam, false);
+        BedFeet = Mathf.Max(0f, ToGameplayDepth(bedMeters) * 3.28084f);
+        float rockRiseMeters = SampleRockRiseMeters(sampleAt, beamRight, beam, bedMeters);
+        RockRiseFeet = Mathf.Max(0f, ToGameplayDepth(rockRiseMeters) * 3.28084f);
         BoatSpeedMph = OnBoat && OccupiedBoat != null
             ? Mathf.Abs(OccupiedBoat.Speed) * 2.23694f
             : 0f;
@@ -424,6 +436,59 @@ public class WorldConditions : MonoBehaviour
         if (geometricMeters <= 0.05f)
             return geometricMeters;
         return geometricMeters * GameplayDepthScale;
+    }
+
+    /// <summary>
+    /// Rock height above the bed. Uses collider bounds so the sonar mound
+    /// follows the boulder, not every jagged mesh face.
+    /// </summary>
+    float SampleRockRiseMeters(Vector3 world, Vector3 right, float beam, float bedMeters)
+    {
+        float rise = RockRiseAt(world, bedMeters);
+        if (beam <= 0.01f)
+            return rise;
+
+        rise = Mathf.Max(rise, RockRiseAt(world + right * beam, bedMeters));
+        rise = Mathf.Max(rise, RockRiseAt(world - right * beam, bedMeters));
+        return rise;
+    }
+
+    float RockRiseAt(Vector3 world, float bedMeters)
+    {
+        if (!hasWaterHeight)
+            return 0f;
+        if (!structureCached)
+            CacheStructure();
+
+        int mask = StructureMask;
+        if (mask == 0)
+            mask = ~LayerMask.GetMask("Player", "Water", "Ignore Raycast", "UI", "TransparentFX");
+
+        Vector3 origin = world;
+        origin.y = waterHeight + 2.5f;
+        int hitCount = Physics.RaycastNonAlloc(origin, Vector3.down, DepthHits, 80f, mask, QueryTriggerInteraction.Ignore);
+        float best = 0f;
+        for (int i = 0; i < hitCount; i++)
+        {
+            RaycastHit hit = DepthHits[i];
+            if (hit.collider == null || !IsRockTransform(hit.transform))
+                continue;
+
+            Bounds b = hit.collider.bounds;
+            float topDepth = waterHeight - b.max.y;
+            if (topDepth >= bedMeters - 0.02f)
+                continue;
+
+            float nx = Mathf.Abs(world.x - b.center.x) / Mathf.Max(0.15f, b.extents.x);
+            float nz = Mathf.Abs(world.z - b.center.z) / Mathf.Max(0.15f, b.extents.z);
+            float fade = 1f - Mathf.SmoothStep(0.4f, 1.05f, Mathf.Max(nx, nz));
+            if (fade <= 0.01f)
+                continue;
+
+            best = Mathf.Max(best, (bedMeters - topDepth) * fade);
+        }
+
+        return best;
     }
 
     float SampleColumn(Vector3 world, bool includeStructure = true)
@@ -480,13 +545,32 @@ public class WorldConditions : MonoBehaviour
 
     static bool IsCoverTransform(Transform hit)
     {
+        return HitsNamedRoot(hit, CoverRoots);
+    }
+
+    static bool IsRockTransform(Transform hit)
+    {
         Transform t = hit;
         while (t != null)
         {
             string name = t.name;
-            for (int i = 0; i < CoverRoots.Length; i++)
+            if (name == "Rocks" || name.StartsWith("Rocks_"))
+                return true;
+            t = t.parent;
+        }
+
+        return false;
+    }
+
+    static bool HitsNamedRoot(Transform hit, string[] roots)
+    {
+        Transform t = hit;
+        while (t != null)
+        {
+            string name = t.name;
+            for (int i = 0; i < roots.Length; i++)
             {
-                string root = CoverRoots[i];
+                string root = roots[i];
                 if (name == root || name.StartsWith(root + "_"))
                     return true;
             }

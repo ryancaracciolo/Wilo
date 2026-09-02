@@ -1387,10 +1387,10 @@
 }
 
 .hud-intro-card {
-    width: 460px;
-    max-width: 46%;
+    width: 440px;
+    max-width: 42%;
     max-height: none;
-    margin: 28px 0 28px 28px;
+    margin: 24px 0 24px 24px;
 }
 
 .hud-intro-scroll {
@@ -1398,20 +1398,52 @@
 }
 
 .hud-intro-title {
-    font-size: 28px;
-    margin-bottom: 2px;
+    font-size: 32px;
+    margin-bottom: 6px;
+    white-space: normal;
+}
+
+.hud-intro-lead {
+    font-size: 14px;
+    margin-bottom: 16px;
+    color: rgb(122, 98, 74);
+}
+
+.hud-intro-kicker {
+    font-size: 12px;
+    letter-spacing: 1px;
+    color: rgb(122, 98, 74);
+    margin-bottom: 8px;
+}
+
+.hud-intro-section {
+    padding: 14px 16px;
 }
 
 .hud-intro-stage {
     flex-grow: 1;
     justify-content: flex-end;
     align-items: center;
-    padding-bottom: 22px;
+    padding-bottom: 28px;
+}
+
+.hud-intro-wash {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 33.333%;
+    background-color: rgba(255, 248, 236, 0.16);
 }
 
 .hud-intro-hint {
     margin-bottom: 0;
-    opacity: 0.7;
+    padding: 6px 14px;
+    border-radius: 14px;
+    border-width: 2px;
+    border-color: rgb(212, 180, 131);
+    background-color: rgba(255, 248, 236, 0.88);
+    color: rgb(76, 61, 47);
 }
 
 .hud-intro-soon {
@@ -1477,11 +1509,11 @@
 }
 
 .hud-swatch {
-    width: 28px;
-    height: 28px;
-    margin: 0 6px 6px 0;
+    width: 32px;
+    height: 32px;
+    margin: 0 7px 7px 0;
     padding: 3px;
-    border-radius: 14px;
+    border-radius: 16px;
     border-width: 2px;
     border-color: rgb(212, 180, 131);
     background-color: rgb(255, 248, 236);
@@ -1494,7 +1526,7 @@
 
 .hud-swatch-fill {
     flex-grow: 1;
-    border-radius: 10px;
+    border-radius: 12px;
 }
 
 .hud-swatch > .unity-button__text {
@@ -1505,9 +1537,11 @@
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
-    margin-top: 6px;
-    padding: 10px 12px;
-    border-radius: 14px;
+    margin-top: 8px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    border-width: 2px;
+    border-color: rgb(226, 198, 158);
     background-color: rgb(255, 248, 236);
 }
 

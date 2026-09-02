@@ -22,7 +22,7 @@ public class PineNeedlesPainterWindow : EditorWindow
     float blendWidth = 2f;
     float shorelineNoise = 1.2f;
     Vector2 tileSize = new Vector2(8f, 8f);
-    string status = "Needles on land, dirt under the lake. Paint uses the water surface height.";
+    string status = "Needles on land, dirt under the lake. Existing sand and other paint is kept.";
 
     [MenuItem("Wilo/Pine Needles")]
     public static void Open()
@@ -124,6 +124,7 @@ public class PineNeedlesPainterWindow : EditorWindow
         if (layerCount < 2)
             return "Terrain alphamap did not expand to two layers.";
 
+        float[,,] existing = data.GetAlphamaps(0, 0, res, res);
         float[,,] map = new float[res, res, layerCount];
         Vector3 origin = terrain.GetPosition();
         int landPixels = 0;
@@ -150,11 +151,19 @@ public class PineNeedlesPainterWindow : EditorWindow
                 float startY = waterY + shoreOffset + wobble;
                 float needles = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(startY, startY + blendWidth, worldY));
 
+                float preserved = 0f;
                 for (int layer = 0; layer < layerCount; layer++)
-                    map[y, x, layer] = 0f;
+                {
+                    if (layer == dirtIndex || layer == needleIndex)
+                        continue;
+                    float weight = existing[y, x, layer];
+                    map[y, x, layer] = weight;
+                    preserved += weight;
+                }
 
-                map[y, x, dirtIndex] = 1f - needles;
-                map[y, x, needleIndex] = needles;
+                float remain = 1f - Mathf.Clamp01(preserved);
+                map[y, x, dirtIndex] = (1f - needles) * remain;
+                map[y, x, needleIndex] = needles * remain;
 
                 if (needles >= 0.5f)
                     landPixels++;

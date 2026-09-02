@@ -79,14 +79,7 @@ public class FishAgent : MonoBehaviour
     public bool IsHooked => mood == Mood.Hooked;
     public Vector3 LinePoint => MouthPoint();
     public Vector3 CatchFocusPoint => Vector3.Lerp(presentLip, transform.position, 0.55f);
-    public bool WantsTwoHandHold
-    {
-        get
-        {
-            float cutoff = Species != null ? Species.TwoHandHoldPounds : 4f;
-            return Size.Pounds >= cutoff;
-        }
-    }
+    public bool WantsTwoHandHold => false;
     public Vector3 CatchSupportPoint
     {
         get
@@ -607,7 +600,7 @@ public class FishAgent : MonoBehaviour
     {
         float length = VisualLength();
         Vector3 axis = transform.forward;
-        Vector3 lip = transform.position + axis * (length * Mathf.Clamp(catchLipAlong, 0.3f, 0.58f));
+        Vector3 lip = transform.position + axis * (length * Mathf.Clamp(catchLipAlong, 0.3f, 0.7f));
         return lip - transform.up * (length * catchLipBelly);
     }
 
@@ -722,12 +715,12 @@ public class FishAgent : MonoBehaviour
             return;
 
         Vector3 axis = CatchLiftAxis();
-        float wag = Mathf.Sin(Time.time * 3.6f) * 8f;
+        float wag = Mathf.Sin(Time.time * 3.6f) * 5f;
 
         float floorY = CatchFloorY() + 0.05f;
         float lowest = LowestTailY();
         float need = Mathf.Max(0f, floorY - lowest);
-        float bendTarget = Mathf.Clamp(need * 70f, 0f, 38f);
+        float bendTarget = Mathf.Clamp(need * 28f, 0f, 12f);
         tailFloorBend = Mathf.SmoothDamp(tailFloorBend, bendTarget, ref tailFloorBendVel, 0.22f);
 
         float combined = tailFloorBend + wag;

@@ -20,6 +20,7 @@ public static class HudTheme
     public static readonly Color Gold = new Color(0.94f, 0.76f, 0.29f);
     public static readonly Color PlayerPin = new Color(0.93f, 0.38f, 0.32f);
     public static readonly Color SonarSand = new Color(0.93f, 0.82f, 0.55f);
+    public static readonly Color SonarRock = new Color(0.62f, 0.54f, 0.43f);
     public static readonly Color SonarWater = new Color(0.12f, 0.32f, 0.36f);
     public static readonly Color FightFill = new Color(0.42f, 0.78f, 0.48f);
     public static readonly Color FightFillHot = new Color(0.55f, 0.86f, 0.4f);

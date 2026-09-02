@@ -263,6 +263,30 @@ public static class HudUi
         p.Fill();
     }
 
+    public static void PaintRipple(MeshGenerationContext ctx)
+    {
+        var r = ctx.visualElement.contentRect;
+        var p = ctx.painter2D;
+        Vector2 c = r.center;
+        float s = Mathf.Min(r.width, r.height);
+
+        p.fillColor = HudTheme.Teal;
+        p.BeginPath();
+        p.Arc(c, s * 0.08f, 0f, 360f);
+        p.Fill();
+
+        p.strokeColor = HudTheme.Teal;
+        p.lineCap = LineCap.Round;
+        p.lineWidth = Mathf.Max(1.6f, s * 0.07f);
+        p.BeginPath();
+        p.Arc(c, s * 0.22f, 0f, 360f);
+        p.Stroke();
+        p.lineWidth = Mathf.Max(1.4f, s * 0.055f);
+        p.BeginPath();
+        p.Arc(c, s * 0.36f, 0f, 360f);
+        p.Stroke();
+    }
+
     public static void PaintStar(MeshGenerationContext ctx)
     {
         var r = ctx.visualElement.contentRect;

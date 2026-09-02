@@ -64,6 +64,14 @@ public class TournamentBoatAgent : MonoBehaviour
         lastProgress = transform.position;
         SnapAngler(false);
 
+        bool released = director != null && director.MayLeave;
+        if (!released)
+        {
+            plan = Plan.LeaveCamp;
+            holdUntilHour = leaveHour;
+            return;
+        }
+
         if (hour >= endHour - 0.05f)
         {
             EnterStage();
@@ -86,12 +94,7 @@ public class TournamentBoatAgent : MonoBehaviour
         if (director != null && director.TryLakeSpot(this, true, out destination))
         {
             transform.position = destination;
-            if (motor != null)
-            {
-                float yaw = (float)rng.NextDouble() * 360f;
-                transform.rotation = Quaternion.Euler(0f, yaw, 0f);
-            }
-
+            transform.rotation = Quaternion.Euler(0f, (float)rng.NextDouble() * 360f, 0f);
             EnterHold(hour);
             return;
         }
@@ -119,7 +122,7 @@ public class TournamentBoatAgent : MonoBehaviour
         switch (plan)
         {
             case Plan.LeaveCamp:
-                if (hour >= holdUntilHour)
+                if (director.MayLeave && hour >= holdUntilHour)
                     BeginCruise();
                 else
                     motor.SetAiDrive(Vector2.zero);
@@ -173,8 +176,7 @@ public class TournamentBoatAgent : MonoBehaviour
     void EnterHold(float hour)
     {
         plan = Plan.Hold;
-        float linger = Mathf.Lerp(0.28f, 0.72f, (float)rng.NextDouble());
-        holdUntilHour = hour + linger;
+        holdUntilHour = hour + Mathf.Lerp(0.28f, 0.72f, (float)rng.NextDouble());
         motor.SetAiDrive(Vector2.zero);
     }
 
@@ -191,12 +193,8 @@ public class TournamentBoatAgent : MonoBehaviour
     {
         float gap = DistanceXZ(transform.position, destination);
         if (gap > 10f)
-        {
             DriveToward(destination);
-            return;
-        }
-
-        if (gap > 3.5f)
+        else if (gap > 3.5f)
             DriveToward(destination, 0.22f);
         else
             motor.SetAiDrive(Vector2.zero);
@@ -216,32 +214,13 @@ public class TournamentBoatAgent : MonoBehaviour
         float angle = distance > 0.05f
             ? Vector3.SignedAngle(bow, to / distance, Vector3.up)
             : 0f;
-        float steer = Mathf.Clamp(angle / 40f, -1f, 1f);
-
-        Vector3 probe = transform.position + bow * 3.2f;
-        if (motor.WouldBlock(probe) || (director != null && !director.IsNavigable(probe)))
-            steer = Mathf.Clamp(steer + (SteerClear(bow) >= 0f ? 1f : -1f), -1f, 1f);
-
-        float facing = 1f - Mathf.Clamp01(Mathf.Abs(angle) / 90f);
-        float throttle = Mathf.Lerp(0.18f, 0.72f, facing) * throttleScale;
-        if (distance < 14f)
-            throttle *= Mathf.Lerp(0.25f, 1f, distance / 14f);
+        float steer = Mathf.Clamp(angle / 70f, -1f, 1f);
+        float throttle = Mathf.Lerp(0.42f, 0.78f, 1f - Mathf.Clamp01(Mathf.Abs(angle) / 140f)) * throttleScale;
+        if (distance < 10f)
+            throttle *= Mathf.Lerp(0.35f, 1f, distance / 10f);
 
         motor.SetAiDrive(new Vector2(steer, throttle));
         TrackStuck();
-    }
-
-    float SteerClear(Vector3 bow)
-    {
-        Vector3 left = Quaternion.Euler(0f, -40f, 0f) * bow;
-        Vector3 right = Quaternion.Euler(0f, 40f, 0f) * bow;
-        Vector3 leftAt = transform.position + left * 4f;
-        Vector3 rightAt = transform.position + right * 4f;
-        bool leftOk = !motor.WouldBlock(leftAt) && (director == null || director.IsNavigable(leftAt));
-        bool rightOk = !motor.WouldBlock(rightAt) && (director == null || director.IsNavigable(rightAt));
-        if (leftOk == rightOk)
-            return rng.NextDouble() < 0.5 ? -1f : 1f;
-        return leftOk ? -1f : 1f;
     }
 
     void TrackStuck()
@@ -260,8 +239,7 @@ public class TournamentBoatAgent : MonoBehaviour
         stuckSeconds = 0f;
         if (plan == Plan.Return || plan == Plan.Stage)
         {
-            if (director != null)
-                director.TryCampSpot(this, out destination);
+            director?.TryCampSpot(this, out destination);
             return;
         }
 
