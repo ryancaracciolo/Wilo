@@ -10,6 +10,7 @@ public struct TournamentStanding
     public float Pounds;
     public int Fish;
     public bool IsPlayer;
+    public string PlayerId;
     public float LunkerLargemouth;
     public float LunkerSmallmouth;
     public bool WonLunkerLargemouth;
@@ -34,8 +35,7 @@ public static class TournamentField
 
     /// <summary>
     /// Fills <paramref name="into"/> with rival results, heaviest first.
-    /// <paramref name="bite"/> scales the whole field for how good the day is,
-    /// so a tough winter Sunday produces lighter bags than a spring one.
+    /// <paramref name="bite"/> is a small seasonal nudge, not a winter wipeout.
     /// </summary>
     public static void Build(TournamentOccurrence occurrence, float bite, List<TournamentStanding> into)
     {
@@ -46,14 +46,15 @@ public static class TournamentField
         TournamentDefinition def = occurrence.Definition;
         var rng = new System.Random(Seed(def.Id, occurrence.DayIndex));
         int size = Mathf.Max(1, def.FieldSize);
-        float strength = def.FieldStrength * Mathf.Clamp(bite, 0.35f, 1.6f);
+        float strength = def.FieldStrength;
+        float biteScale = Mathf.Clamp(bite, 0.9f, 1.1f);
 
         for (int i = 0; i < size; i++)
         {
             float skill = Skill(rng);
             into.Add(def.Format == TournamentFormat.BiggestBass
-                ? BiggestBassEntry(rng, def, strength, skill, PickName(rng, i, size))
-                : BestBagEntry(rng, def, strength, skill, PickName(rng, i, size)));
+                ? BiggestBassEntry(rng, def, strength, biteScale, skill, PickName(rng, i, size))
+                : BestBagEntry(rng, def, strength, biteScale, skill, PickName(rng, i, size)));
         }
 
         into.Sort(CompareHeaviest);
@@ -87,19 +88,26 @@ public static class TournamentField
     }
 
     static TournamentStanding BestBagEntry(
-        System.Random rng, TournamentDefinition def, float strength, float skill, string name)
+        System.Random rng, TournamentDefinition def, float strength, float biteScale, float skill, string name)
     {
-        // A weak bag is a couple of small keepers; a hot bag is a full limit of good fish.
+        // FieldStrength 0.85 / 1.10 / 1.28 / 1.45 sits on Club / Open / Regional /
+        // Invitational: about 12, 16, 18, 20 lb averages with a ~14 lb typical spread.
+        float pack = (strength - 0.85f) / 0.6f;
+        float typical = 12f + pack * 8f;
+        float floor = Mathf.Max(3f, 6f + pack * 10f);
+        float ceiling = 20f + pack * 10f;
+
+        float u = skill - 0.48f;
+        float pounds = u < 0f
+            ? typical + u / 0.32f * (typical - floor)
+            : typical + u / 0.38f * (ceiling - typical);
+        pounds *= 0.96f + (float)rng.NextDouble() * 0.08f;
+        pounds *= biteScale;
+        pounds = Mathf.Max(0f, Mathf.Round(pounds * 100f) * 0.01f);
+
         int fish = Mathf.Clamp(
-            Mathf.RoundToInt(Mathf.Lerp(1.4f, def.BagLimit + 0.4f, skill)),
-            0, def.BagLimit);
-
-        float perFish = Mathf.Lerp(1.5f, 3.9f, skill) * strength;
-        float jitter = 0.88f + (float)rng.NextDouble() * 0.24f;
-        float pounds = fish * perFish * jitter;
-
-        if (fish == 0)
-            pounds = 0f;
+            Mathf.RoundToInt(Mathf.Lerp(2.2f, def.BagLimit + 0.15f, Mathf.InverseLerp(0.16f, 0.86f, skill))),
+            1, def.BagLimit);
 
         SplitLunkers(rng, fish, pounds, out float lm, out float sm);
 
@@ -114,10 +122,10 @@ public static class TournamentField
     }
 
     static TournamentStanding BiggestBassEntry(
-        System.Random rng, TournamentDefinition def, float strength, float skill, string name)
+        System.Random rng, TournamentDefinition def, float strength, float biteScale, float skill, string name)
     {
         float jitter = 0.9f + (float)rng.NextDouble() * 0.2f;
-        float pounds = Mathf.Lerp(1.6f, 6.4f, skill) * strength * jitter;
+        float pounds = Mathf.Lerp(1.6f, 6.4f, skill) * strength * biteScale * jitter;
         bool blanked = skill < 0.08f;
         float scored = blanked ? 0f : Mathf.Round(pounds * 100f) * 0.01f;
         bool largemouth = rng.NextDouble() < 0.58;

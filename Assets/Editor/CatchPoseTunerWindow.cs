@@ -10,12 +10,12 @@ public class CatchPoseTunerWindow : EditorWindow
 {
     static readonly string[] HoldFields =
     {
-        "catchHoldLocal",
-        "catchTowardCamera",
-        "catchLipAlong",
-        "catchLipBelly",
-        "catchPinchAlong",
-        "catchPinchOut"
+        "catchHoldPos",
+        "catchCameraOffset",
+        "catchLipDist",
+        "catchLipDrop",
+        "catchGripAlong",
+        "catchGripOut"
     };
 
     PlayerFishing player;
@@ -170,7 +170,7 @@ public class CatchPoseTunerWindow : EditorWindow
         Vector3 hold = t.TransformPoint(
             fish != null && fish.WantsTwoHandHold
                 ? SerializedVector("catchHoldTwoHandLocal", new Vector3(-0.18f, 0.54f, 0.28f))
-                : SerializedVector("catchHoldLocal", new Vector3(-0.6f, 0.74f, 0.68f)));
+                : SerializedVector("catchHoldPos", new Vector3(-1f, 1.5f, 0f)));
 
         Handles.color = new Color(0.2f, 0.85f, 0.45f, 0.9f);
         Handles.SphereHandleCap(0, hold, Quaternion.identity, 0.04f, EventType.Repaint);

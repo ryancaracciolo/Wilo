@@ -45,8 +45,11 @@ public class WorldConditions : MonoBehaviour
     static readonly RaycastHit[] DepthHits = new RaycastHit[24];
     static readonly List<Renderer> StructureScratch = new List<Renderer>();
     const string LureColliderName = "LureCollider";
+    static int depthIgnoreMask;
 
     bool structureCached;
+    float depthSampleAt;
+    Vector3 depthSamplePos;
 
     PlayerBoatInteractor boat;
     Transform player;
@@ -382,6 +385,16 @@ public class WorldConditions : MonoBehaviour
             ? OccupiedBoat.transform.right
             : Vector3.right;
 
+        BoatSpeedMph = OnBoat && OccupiedBoat != null
+            ? Mathf.Abs(OccupiedBoat.Speed) * 2.23694f
+            : 0f;
+
+        if (Time.time - depthSampleAt < 0.1f
+            && (sampleAt - depthSamplePos).sqrMagnitude < 0.16f)
+            return;
+
+        depthSampleAt = Time.time;
+        depthSamplePos = sampleAt;
         float beam = OnBoat ? 1.1f : 0f;
         float geometric = GeometricDepthMeters(sampleAt, beamRight, beam);
         OverWater = geometric > 0.05f;
@@ -390,9 +403,6 @@ public class WorldConditions : MonoBehaviour
         BedFeet = Mathf.Max(0f, ToGameplayDepth(bedMeters) * 3.28084f);
         float rockRiseMeters = SampleRockRiseMeters(sampleAt, beamRight, beam, bedMeters);
         RockRiseFeet = Mathf.Max(0f, ToGameplayDepth(rockRiseMeters) * 3.28084f);
-        BoatSpeedMph = OnBoat && OccupiedBoat != null
-            ? Mathf.Abs(OccupiedBoat.Speed) * 2.23694f
-            : 0f;
     }
 
     public float GeometricDepthMeters(Vector3 world)
@@ -462,7 +472,7 @@ public class WorldConditions : MonoBehaviour
 
         int mask = StructureMask;
         if (mask == 0)
-            mask = ~LayerMask.GetMask("Player", "Water", "Ignore Raycast", "UI", "TransparentFX");
+            mask = DepthIgnoreMask();
 
         Vector3 origin = world;
         origin.y = waterHeight + 2.5f;
@@ -507,7 +517,7 @@ public class WorldConditions : MonoBehaviour
         if (includeStructure && !structureCached)
             CacheStructure();
 
-        int mask = ~LayerMask.GetMask("Player", "Water", "Ignore Raycast", "UI", "TransparentFX");
+        int mask = DepthIgnoreMask();
         Vector3 origin = world;
         origin.y = waterHeight + 2.5f;
         int hitCount = Physics.RaycastNonAlloc(origin, Vector3.down, DepthHits, 80f, mask, QueryTriggerInteraction.Ignore);
@@ -524,6 +534,13 @@ public class WorldConditions : MonoBehaviour
             return 0f;
 
         return waterHeight - bedY;
+    }
+
+    static int DepthIgnoreMask()
+    {
+        if (depthIgnoreMask == 0)
+            depthIgnoreMask = ~LayerMask.GetMask("Player", "Water", "Ignore Raycast", "UI", "TransparentFX");
+        return depthIgnoreMask;
     }
 
     bool ShouldIgnoreDepthHit(Transform hit, bool includeStructure)

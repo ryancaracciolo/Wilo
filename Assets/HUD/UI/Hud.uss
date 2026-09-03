@@ -16,13 +16,84 @@
 .hud-stat-chip {
     flex-direction: row;
     align-items: center;
-    height: 44px;
+    height: 50px;
     margin-right: 10px;
-    padding: 0 14px 0 12px;
-    border-radius: 22px;
+    padding: 0 18px;
+    border-radius: 25px;
     border-width: 3px;
     border-color: rgb(212, 180, 131);
     background-color: rgb(255, 248, 236);
+}
+
+.hud-place-chip {
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: center;
+    height: 50px;
+    margin-right: 10px;
+    padding: 3px 16px;
+    border-radius: 25px;
+    border-width: 3px;
+    border-color: rgb(212, 180, 131);
+    background-color: rgb(255, 248, 236);
+}
+
+.hud-place-step {
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    width: 20px;
+    margin: 0 2px;
+}
+
+.hud-place-count-wrap {
+    width: 100%;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1px;
+}
+
+.hud-place-count,
+.hud-place-count > .unity-text-element {
+    padding: 0;
+    margin: 0;
+    font-size: 11px;
+    color: rgb(76, 61, 47);
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+}
+
+.hud-place-block {
+    width: 100%;
+    align-items: center;
+    justify-content: center;
+    border-top-left-radius: 3px;
+    border-top-right-radius: 3px;
+    background-color: rgb(224, 178, 96);
+}
+
+.hud-place-step--2 > .hud-place-block {
+    height: 16px;
+}
+
+.hud-place-step--1 > .hud-place-block {
+    height: 24px;
+    background-color: rgb(212, 160, 72);
+}
+
+.hud-place-step--3 > .hud-place-block {
+    height: 11px;
+}
+
+.hud-place-rank {
+    width: 100%;
+    height: 100%;
+    font-size: 9px;
+    color: rgb(255, 248, 236);
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    padding: 0;
+    margin: 0;
 }
 
 .hud-stat-glyph {
@@ -966,7 +1037,7 @@
     translate: -50% 0;
     flex-direction: row;
     align-items: center;
-    padding: 6px 10px 6px 16px;
+    padding: 6px 8px 6px 16px;
     border-radius: 14px;
     border-width: 3px;
     border-color: rgb(224, 178, 96);
@@ -983,15 +1054,31 @@
     -unity-font-style: bold;
     -unity-text-align: middle-center;
     white-space: normal;
-    margin-right: 8px;
+    margin-right: 6px;
+}
+
+.hud-tourney-bag-pill {
+    flex-direction: row;
+    align-items: center;
+    padding: 3px 8px 3px 8px;
+    border-radius: 6px;
+    background-color: rgb(224, 178, 96);
+    flex-shrink: 0;
+}
+
+.hud-tourney-bag-label {
+    font-size: 12px;
+    color: rgb(76, 61, 47);
+    -unity-font-style: bold;
+    margin-right: 2px;
 }
 
 .hud-tourney-chevron {
-    width: 22px;
-    height: 22px;
-    padding: 3px;
-    border-radius: 11px;
-    background-color: rgb(224, 178, 96);
+    width: 18px;
+    height: 18px;
+    padding: 2px;
+    border-radius: 9px;
+    color: rgb(76, 61, 47);
     flex-shrink: 0;
 }
 
@@ -1247,6 +1334,40 @@
     flex-grow: 1;
     margin-top: 8px;
     margin-right: 8px;
+}
+
+.hud-cull-sheet {
+    width: 320px;
+}
+
+.hud-cull-row {
+    flex-direction: row;
+    align-items: center;
+    padding: 6px 8px;
+    margin-top: 4px;
+    border-radius: 10px;
+    background-color: rgba(0, 0, 0, 0.15);
+}
+
+.hud-cull-row:hover {
+    background-color: rgba(0, 0, 0, 0.25);
+}
+
+.hud-cull-row > .hud-lure-swatch {
+    width: 24px;
+    height: 24px;
+    margin-right: 8px;
+    flex-shrink: 0;
+}
+
+.hud-cull-info {
+    flex-grow: 1;
+    flex-shrink: 1;
+}
+
+.hud-cull-row > .hud-text-button {
+    flex-shrink: 0;
+    margin-left: 6px;
 }
 
 .hud-fight {

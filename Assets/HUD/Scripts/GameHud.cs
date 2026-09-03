@@ -41,11 +41,18 @@ public class GameHud : MonoBehaviour
     ConditionsStrip strip;
     Label moneyLabel;
     Label reputationLabel;
+    Label placeFirstLabel;
+    Label placeSecondLabel;
+    Label placeThirdLabel;
     int shownMoney = int.MinValue;
     int shownReputation = int.MinValue;
+    int shownFirst = int.MinValue;
+    int shownSecond = int.MinValue;
+    int shownThird = int.MinValue;
     Label noticeToast;
     Button tourneyChip;
     Label tourneyChipLabel;
+    Label tourneyBagLabel;
     VisualElement tourneyChevron;
     VisualElement bagPopover;
     HudCueOverlay cueOverlay;
@@ -63,6 +70,9 @@ public class GameHud : MonoBehaviour
     VisualElement catchCatcher;
     Button catchMark;
     CatchRecord shownCatch;
+    VisualElement cullSheet;
+    VisualElement cullCatcher;
+    CatchRecord cullRecord;
     CatchRecord selectedMarked;
     MapSpot selectedSpot;
     bool namingSpot;
@@ -73,7 +83,9 @@ public class GameHud : MonoBehaviour
     readonly List<TournamentOccurrence> skipScratch = new List<TournamentOccurrence>();
     readonly List<TournamentOccurrence> enteredScratch = new List<TournamentOccurrence>();
     TourneyTab tourneyTab;
-    bool tourneyPastPlacedOnly;
+    bool tourneyEnteredPast;
+    bool tournamentsOpen;
+    TextField joinCodeField;
     VisualElement mapJournalLayer;
     VisualElement mapJournalCard;
     VisualElement mapJournalDetail;
@@ -124,7 +136,14 @@ public class GameHud : MonoBehaviour
         {
             director.Notice += ShowNotice;
             director.BagChanged += RefreshTournamentChip;
+            director.CullRequired += ShowCullSheet;
             director.Finished += ShowTournamentResult;
+        }
+
+        if (TournamentLobby.Instance != null)
+        {
+            TournamentLobby.Instance.Changed += OnLobbyChanged;
+            TournamentLobby.Instance.Notice += ShowNotice;
         }
     }
 
@@ -152,12 +171,20 @@ public class GameHud : MonoBehaviour
         {
             director.Notice -= ShowNotice;
             director.BagChanged -= RefreshTournamentChip;
+            director.CullRequired -= ShowCullSheet;
             director.Finished -= ShowTournamentResult;
+        }
+
+        if (TournamentLobby.Instance != null)
+        {
+            TournamentLobby.Instance.Changed -= OnLobbyChanged;
+            TournamentLobby.Instance.Notice -= ShowNotice;
         }
         CloseLurePicker();
         HudInput.Reset();
         HudCues.Reset();
         shownCatch = null;
+        cullRecord = null;
         built = false;
     }
 
@@ -214,7 +241,12 @@ public class GameHud : MonoBehaviour
 
         if (keyboard.escapeKey.wasPressedThisFrame)
         {
-            if (CatchSheetOpen)
+            if (CullSheetOpen)
+            {
+                director?.ReleaseCull();
+                DismissCullSheet();
+            }
+            else if (CatchSheetOpen)
                 ContinueCatch();
             else
                 CloseAllOverlays();
@@ -434,6 +466,7 @@ public class GameHud : MonoBehaviour
         topLeft.Add(HudUi.IconButton("Tournaments", HudUi.PaintTrophy, OpenTournaments));
         topLeft.Add(HudUi.StatChip("Money", null, out moneyLabel));
         topLeft.Add(HudUi.StatChip("Reputation", HudUi.PaintStar, out reputationLabel));
+        topLeft.Add(HudUi.PlaceChip(out placeFirstLabel, out placeSecondLabel, out placeThirdLabel));
         root.Add(topLeft);
 
         var topRight = new VisualElement();
@@ -473,8 +506,18 @@ public class GameHud : MonoBehaviour
         tourneyChipLabel.AddToClassList("hud-tourney-chip-label");
         tourneyChipLabel.pickingMode = PickingMode.Ignore;
         tourneyChip.Add(tourneyChipLabel);
+        var bagPill = new VisualElement();
+        bagPill.AddToClassList("hud-tourney-bag-pill");
+        bagPill.pickingMode = PickingMode.Ignore;
+
+        tourneyBagLabel = new Label("Bag");
+        tourneyBagLabel.AddToClassList("hud-tourney-bag-label");
+        tourneyBagLabel.pickingMode = PickingMode.Ignore;
+        bagPill.Add(tourneyBagLabel);
+
         tourneyChevron = HudUi.Glyph("hud-tourney-chevron", HudUi.PaintChevronDown);
-        tourneyChip.Add(tourneyChevron);
+        bagPill.Add(tourneyChevron);
+        tourneyChip.Add(bagPill);
         root.Add(tourneyChip);
 
         cueOverlay = new HudCueOverlay();
@@ -493,6 +536,19 @@ public class GameHud : MonoBehaviour
         catchCatcher.style.display = DisplayStyle.None;
         catchCatcher.RegisterCallback<ClickEvent>(_ => ContinueCatch());
         root.Add(catchCatcher);
+
+        cullCatcher = new VisualElement();
+        cullCatcher.AddToClassList("hud-catch-catcher");
+        cullCatcher.pickingMode = PickingMode.Position;
+        cullCatcher.style.display = DisplayStyle.None;
+        root.Add(cullCatcher);
+
+        cullSheet = new VisualElement();
+        cullSheet.AddToClassList("hud-catch-sheet");
+        cullSheet.AddToClassList("hud-cull-sheet");
+        cullSheet.pickingMode = PickingMode.Position;
+        cullSheet.style.display = DisplayStyle.None;
+        root.Add(cullSheet);
 
         fightPanel = new FishFightPanel();
         root.Add(fightPanel);
@@ -549,6 +605,9 @@ public class GameHud : MonoBehaviour
         RefreshTournamentChip();
         shownMoney = int.MinValue;
         shownReputation = int.MinValue;
+        shownFirst = int.MinValue;
+        shownSecond = int.MinValue;
+        shownThird = int.MinValue;
         RefreshWallet();
         built = true;
     }
@@ -635,15 +694,53 @@ public class GameHud : MonoBehaviour
     {
         int money = progress != null ? progress.Money : 0;
         int reputation = progress != null ? progress.Reputation : 0;
-        if (money == shownMoney && reputation == shownReputation)
+        if (money != shownMoney || reputation != shownReputation)
+        {
+            shownMoney = money;
+            shownReputation = reputation;
+            if (moneyLabel != null)
+                moneyLabel.text = $"${money}";
+            if (reputationLabel != null)
+                reputationLabel.text = reputation.ToString();
+        }
+
+        RefreshPlaceChip();
+    }
+
+    void RefreshPlaceChip()
+    {
+        int first = 0;
+        int second = 0;
+        int third = 0;
+        if (director != null)
+        {
+            IReadOnlyList<TournamentResult> history = director.History;
+            for (int i = 0; i < history.Count; i++)
+            {
+                TournamentResult past = history[i];
+                if (past == null || !past.Placed)
+                    continue;
+                if (past.Place == 1)
+                    first++;
+                else if (past.Place == 2)
+                    second++;
+                else if (past.Place == 3)
+                    third++;
+            }
+        }
+
+        if (first == shownFirst && second == shownSecond && third == shownThird)
             return;
 
-        shownMoney = money;
-        shownReputation = reputation;
-        if (moneyLabel != null)
-            moneyLabel.text = $"${money}";
-        if (reputationLabel != null)
-            reputationLabel.text = reputation.ToString();
+        shownFirst = first;
+        shownSecond = second;
+        shownThird = third;
+        if (placeFirstLabel != null)
+            placeFirstLabel.text = first.ToString();
+        if (placeSecondLabel != null)
+            placeSecondLabel.text = second.ToString();
+        if (placeThirdLabel != null)
+            placeThirdLabel.text = third.ToString();
     }
 
     void RefreshLureChip()
@@ -760,7 +857,123 @@ public class GameHud : MonoBehaviour
         shownCatch = null;
         catchMark = null;
         HudInput.PopupOpen = false;
+
+        // If the director is holding a pending cull, show the cull sheet now
+        // instead of returning to gameplay.
+        if (director != null && director.PendingCull != null)
+        {
+            ShowCullSheet(director.PendingCull);
+            return;
+        }
+
         fishing?.DismissCatch();
+    }
+
+    bool CullSheetOpen => cullSheet != null && cullSheet.style.display == DisplayStyle.Flex;
+
+    void ShowCullSheet(CatchRecord record)
+    {
+        if (cullSheet == null || record == null || director == null)
+            return;
+
+        // If the catch sheet is still up, defer — ContinueCatch will re-invoke us.
+        if (CatchSheetOpen)
+            return;
+
+        cullRecord = record;
+        cullSheet.Clear();
+
+        cullSheet.Add(HudUi.Muted("Bag full"));
+        cullSheet.Add(HudUi.Title($"{record.SpeciesName}  ·  {record.Pounds:0.00} lb"));
+        var size = HudUi.Body($"{record.LengthInches:0.0} in");
+        size.AddToClassList("hud-catch-size");
+        cullSheet.Add(size);
+        cullSheet.Add(HudUi.Muted("Replace a fish or let this one go."));
+
+        IReadOnlyList<CatchRecord> kept = director.Bag;
+        for (int i = 0; i < kept.Count; i++)
+        {
+            CatchRecord fish = kept[i];
+            int slot = i;
+            var row = new Button();
+            row.AddToClassList("hud-cull-row");
+            row.focusable = false;
+
+            var swatch = new VisualElement();
+            swatch.AddToClassList("hud-lure-swatch");
+            swatch.pickingMode = PickingMode.Ignore;
+            ApplyLureSwatch(swatch, IconForCatch(fish), fish.LureColor);
+            row.Add(swatch);
+
+            var info = new VisualElement();
+            info.pickingMode = PickingMode.Ignore;
+            info.AddToClassList("hud-cull-info");
+            info.Add(HudUi.Body($"{SpeciesShort(fish.SpeciesName)}  {fish.Pounds:0.00} lb"));
+
+            bool isLm = TournamentBag.IsLargemouth(fish);
+            bool isSm = TournamentBag.IsSmallmouth(fish);
+            float bestLm = director.Bag.Count > 0 ? FindBestSpecies(kept, true) : 0f;
+            float bestSm = director.Bag.Count > 0 ? FindBestSpecies(kept, false) : 0f;
+            if (isLm && fish.Pounds >= bestLm - 0.001f)
+                info.Add(HudUi.Pill("LM lunker"));
+            else if (isSm && fish.Pounds >= bestSm - 0.001f)
+                info.Add(HudUi.Pill("SM lunker"));
+
+            row.Add(info);
+
+            var replace = HudUi.TextButton("Replace", () =>
+            {
+                director.AcceptCull(slot);
+                DismissCullSheet();
+                RefreshTournamentChip();
+            });
+            replace.RegisterCallback<ClickEvent>(evt => evt.StopPropagation());
+            row.Add(replace);
+
+            cullSheet.Add(row);
+        }
+
+        var actions = new VisualElement();
+        actions.AddToClassList("hud-catch-actions");
+        var releaseBtn = HudUi.TextButton("Let it go", () =>
+        {
+            director.ReleaseCull();
+            DismissCullSheet();
+        }, true);
+        releaseBtn.RegisterCallback<ClickEvent>(evt => evt.StopPropagation());
+        actions.Add(releaseBtn);
+        cullSheet.Add(actions);
+
+        cullCatcher.style.display = DisplayStyle.Flex;
+        cullSheet.style.display = DisplayStyle.Flex;
+        cullCatcher.BringToFront();
+        cullSheet.BringToFront();
+        HudInput.PopupOpen = true;
+    }
+
+    void DismissCullSheet()
+    {
+        if (!CullSheetOpen)
+            return;
+        cullSheet.style.display = DisplayStyle.None;
+        cullCatcher.style.display = DisplayStyle.None;
+        cullRecord = null;
+        HudInput.PopupOpen = false;
+        fishing?.DismissCatch();
+    }
+
+    static float FindBestSpecies(IReadOnlyList<CatchRecord> kept, bool largemouth)
+    {
+        float best = 0f;
+        for (int i = 0; i < kept.Count; i++)
+        {
+            bool match = largemouth
+                ? TournamentBag.IsLargemouth(kept[i])
+                : TournamentBag.IsSmallmouth(kept[i]);
+            if (match && kept[i].Pounds > best)
+                best = kept[i].Pounds;
+        }
+        return best;
     }
 
     void ShowEscape()
@@ -913,7 +1126,9 @@ public class GameHud : MonoBehaviour
         float wake = dayCycle.WakeHourFor(tomorrow);
 
         body.Add(HudUi.Body("Sleep until morning?"));
-        body.Add(HudUi.Muted($"You wake at the cabin on {date}, around {GameCalendar.FormatHour(wake)}."));
+        bool campMorning = director != null && director.HasRegistrationOn(tomorrow);
+        string place = campMorning ? "camp" : "cabin";
+        body.Add(HudUi.Muted($"You wake at the {place} on {date}, around {GameCalendar.FormatHour(wake)}."));
 
         if (director != null && director.Phase != TournamentPhase.Idle)
             body.Add(HudUi.Muted("The tournament is still open. Sleeping now forfeits your bag."));
@@ -963,6 +1178,7 @@ public class GameHud : MonoBehaviour
         if (CatchSheetOpen || MapJournalOpen)
             return;
         ClosePopovers();
+        tournamentsOpen = true;
         VisualElement body = BeginCard("Tournaments", CloseAllOverlays);
         modalCard.EnableInClassList("hud-card--tall", true);
 
@@ -982,6 +1198,7 @@ public class GameHud : MonoBehaviour
             live.AddToClassList("hud-section");
             live.Add(HudUi.Muted("On the water now"));
             live.Add(HudUi.Body(director.StatusLine));
+            AddFriendWeighIn(live);
             body.Add(live);
         }
 
@@ -997,36 +1214,220 @@ public class GameHud : MonoBehaviour
             tourneyTab = TourneyTab.Entered;
             OpenTournaments();
         }, tourneyTab == TourneyTab.Entered));
-        tabs.Add(HudUi.Tab("Past", () =>
+        tabs.Add(HudUi.Tab("Friends", () =>
         {
-            tourneyTab = TourneyTab.Past;
+            tourneyTab = TourneyTab.Friends;
             OpenTournaments();
-        }, tourneyTab == TourneyTab.Past));
+        }, tourneyTab == TourneyTab.Friends));
         modalCard.Insert(1, tabs);
 
-        if (tourneyTab == TourneyTab.Past)
+        if (tourneyTab == TourneyTab.Friends)
+            FillFriends(body);
+        else if (tourneyTab == TourneyTab.Entered)
         {
             var filter = HudUi.TabRow();
             filter.AddToClassList("hud-past-filter");
-            filter.Add(HudUi.Tab("All", () =>
+            filter.Add(HudUi.Tab("Upcoming", () =>
             {
-                tourneyPastPlacedOnly = false;
+                tourneyEnteredPast = false;
                 OpenTournaments();
-            }, !tourneyPastPlacedOnly));
-            filter.Add(HudUi.Tab("Placed", () =>
+            }, !tourneyEnteredPast));
+            filter.Add(HudUi.Tab("Past", () =>
             {
-                tourneyPastPlacedOnly = true;
+                tourneyEnteredPast = true;
                 OpenTournaments();
-            }, tourneyPastPlacedOnly));
+            }, tourneyEnteredPast));
             modalCard.Insert(2, filter);
-            FillPast(body);
+            if (tourneyEnteredPast)
+                FillPast(body);
+            else
+                FillEntered(body);
         }
-        else if (tourneyTab == TourneyTab.Entered)
-            FillEntered(body);
         else
             FillBoard(body);
 
         ShowModal();
+    }
+
+    void FillFriends(VisualElement body)
+    {
+        TournamentLobby lobby = TournamentLobby.Instance;
+        if (lobby == null)
+        {
+            body.Add(HudUi.Body("Friends aren't available just now."));
+            return;
+        }
+
+        if (director != null && director.Phase != TournamentPhase.Idle && !director.IsFriendEvent)
+        {
+            body.Add(HudUi.Body("Finish your tournament first."));
+            return;
+        }
+
+        if (!lobby.IsActive)
+        {
+            var section = new VisualElement();
+            section.AddToClassList("hud-section");
+            section.Add(HudUi.Muted("Fish with a friend"));
+            section.Add(HudUi.Body("Host an event and share the code, or join with one."));
+            body.Add(section);
+        }
+
+        if (!string.IsNullOrEmpty(lobby.Error))
+            body.Add(HudUi.Muted(lobby.Error));
+
+        if (lobby.IsActive)
+        {
+            FillActiveLobby(body, lobby);
+            return;
+        }
+
+        FillInviteChoices(body, lobby);
+
+        var join = new VisualElement();
+        join.AddToClassList("hud-section");
+        join.Add(HudUi.Muted("Join with a code"));
+        joinCodeField = HudUi.NameField("", 8, () => lobby.Join(joinCodeField != null ? joinCodeField.value : ""), autoFocus: false);
+        join.Add(joinCodeField);
+        join.Add(HudUi.TextButton(lobby.Busy ? "Joining…" : "Join", () =>
+        {
+            tourneyTab = TourneyTab.Friends;
+            lobby.Join(joinCodeField != null ? joinCodeField.value : "");
+        }));
+        body.Add(join);
+    }
+
+    void FillInviteChoices(VisualElement body, TournamentLobby lobby)
+    {
+        if (director == null)
+            return;
+
+        bool any = false;
+        var list = new VisualElement();
+        list.AddToClassList("hud-section");
+        list.Add(HudUi.Muted("Host"));
+
+        HashSet<string> seen = new HashSet<string>();
+        IReadOnlyList<TournamentDefinition> defs = director.Definitions;
+        for (int i = 0; i < defs.Count; i++)
+        {
+            TournamentDefinition def = defs[i];
+            if (def == null || !seen.Add(def.Id) || !director.CanInvite(def))
+                continue;
+
+            any = true;
+            string label = director.HasUpcomingEntry(def)
+                ? def.DisplayName
+                : def.EntryFee > 0
+                    ? $"{def.DisplayName}  ·  ${def.EntryFee}"
+                    : def.DisplayName;
+            list.Add(HudUi.TextButton(lobby.Busy ? "Opening…" : label, () =>
+            {
+                tourneyTab = TourneyTab.Friends;
+                lobby.Host(def);
+            }, true));
+        }
+
+        if (!any)
+        {
+            body.Add(HudUi.Muted("Nothing you can host right now. You can still join with a code."));
+            return;
+        }
+
+        body.Add(list);
+    }
+
+    void FillActiveLobby(VisualElement body, TournamentLobby lobby)
+    {
+        var live = new VisualElement();
+        live.AddToClassList("hud-section");
+        TournamentDefinition invited = lobby.Invited;
+        live.Add(HudUi.Muted(invited != null ? invited.DisplayName : lobby.IsHost ? "Your lobby" : "Joined lobby"));
+        if (invited != null)
+            live.Add(HudUi.Body($"{invited.FormatLabel}  ·  {invited.EntryLabel}"));
+        if (!string.IsNullOrEmpty(lobby.JoinCode))
+            live.Add(HudUi.Title(lobby.JoinCode));
+        live.Add(HudUi.Body(lobby.StatusLine));
+
+        IReadOnlyList<AnglerPresence> anglers = lobby.Anglers;
+        if (anglers.Count == 0)
+            live.Add(HudUi.Muted("Waiting for your friend."));
+        for (int i = 0; i < anglers.Count; i++)
+        {
+            AnglerPresence angler = anglers[i];
+            if (angler == null)
+                continue;
+            string name = string.IsNullOrEmpty(angler.AnglerName) ? "Angler" : angler.AnglerName;
+            string state = angler.Submitted ? "bag in" : angler.Ready ? "ready" : "here";
+            live.Add(HudUi.Body($"{name}  ·  {state}"));
+        }
+
+        body.Add(live);
+
+        var actions = new VisualElement();
+        actions.AddToClassList("hud-form-actions");
+        if (director != null && director.IsFriendEvent)
+            AddFriendWeighIn(actions);
+        else
+        {
+            AnglerPresence mine = null;
+            for (int i = 0; i < anglers.Count; i++)
+            {
+                if (anglers[i] != null && anglers[i].IsOwner)
+                    mine = anglers[i];
+            }
+
+            bool ready = mine != null && mine.Ready;
+            actions.Add(HudUi.TextButton(ready ? "Not ready" : "Ready", () => lobby.SetReady(!ready), !ready));
+        }
+
+        actions.Add(HudUi.TextButton("Leave", lobby.Leave));
+        if (!string.IsNullOrEmpty(lobby.JoinCode))
+        {
+            actions.Add(HudUi.TextButton("Copy code", () =>
+            {
+                GUIUtility.systemCopyBuffer = lobby.JoinCode;
+                ShowNotice("Code copied.");
+            }));
+        }
+
+        body.Add(actions);
+    }
+
+    void AddFriendWeighIn(VisualElement parent)
+    {
+        TournamentLobby lobby = TournamentLobby.Instance;
+        if (lobby == null)
+            return;
+
+        if (lobby.WaitingOnOthers)
+            parent.Add(HudUi.Muted("Waiting for your friend to weigh in."));
+        else if (lobby.CanWeighIn)
+        {
+            parent.Add(HudUi.TextButton("Weigh in", () =>
+            {
+                lobby.WeighIn();
+                OpenTournaments();
+            }, true));
+        }
+
+        if (lobby.CanCallScales)
+        {
+            parent.Add(HudUi.TextButton("Call scales", () =>
+            {
+                lobby.CallScales();
+                OpenTournaments();
+            }));
+        }
+    }
+
+    void OnLobbyChanged()
+    {
+        RefreshTournamentChip();
+        if (HudInput.Typing)
+            return;
+        if (tournamentsOpen && tourneyTab == TourneyTab.Friends)
+            OpenTournaments();
     }
 
     void FillBoard(VisualElement body)
@@ -1099,8 +1500,6 @@ public class GameHud : MonoBehaviour
             TournamentResult past = history[i];
             if (past == null)
                 continue;
-            if (tourneyPastPlacedOnly && !past.Placed)
-                continue;
 
             string week = conditions != null
                 ? TournamentSchedule.PastWeekLabel(conditions.Calendar, past.DayIndex)
@@ -1118,9 +1517,7 @@ public class GameHud : MonoBehaviour
         if (shown > 0)
             return;
 
-        body.Add(HudUi.Body(tourneyPastPlacedOnly
-            ? "Nothing placed yet."
-            : "No tournaments yet. Sign up on the board."));
+        body.Add(HudUi.Body("No tournaments yet. Sign up on the board."));
     }
 
     VisualElement MakePastRow(TournamentResult result)
@@ -1216,6 +1613,8 @@ public class GameHud : MonoBehaviour
         bool locked = !director.MeetsReputation(def);
         if (locked)
             row.Add(HudUi.LockLine(def.ReputationLockLabel));
+        else if (!registered && director.EntryClosed(occurrence))
+            row.Add(HudUi.Muted("Entries closed. Sign up the day before."));
         else if (!registered && !director.AffordableFee(def))
             row.Add(HudUi.Muted("Not enough money"));
         else if (!registered && director.HasRegistrationOn(occurrence.DayIndex) && !director.HasPassed(occurrence))
@@ -1240,6 +1639,22 @@ public class GameHud : MonoBehaviour
             }, true));
         }
 
+        TournamentLobby lobby = TournamentLobby.Instance;
+        if (lobby != null && !lobby.IsActive && !lobby.Busy && director.CanInvite(def)
+            && director.Phase == TournamentPhase.Idle)
+        {
+            bool entered = director.HasUpcomingEntry(def);
+            string invite = entered || def.EntryFee <= 0
+                ? "Invite"
+                : $"Invite · ${def.EntryFee}";
+            actions.Add(HudUi.TextButton(invite, () =>
+            {
+                tourneyTab = TourneyTab.Friends;
+                lobby.Host(def);
+                OpenTournaments();
+            }));
+        }
+
         if (director.CanSkipTo(occurrence))
             actions.Add(HudUi.TextButton("Skip to", () => OpenSkipSheet(occurrence)));
         if (actions.childCount > 0)
@@ -1254,6 +1669,7 @@ public class GameHud : MonoBehaviour
         // An entry fee has just left the wallet; don't make a crash refund it.
         SaveService.Instance?.Save();
         tourneyTab = TourneyTab.Entered;
+        tourneyEnteredPast = false;
         OpenTournaments();
     }
 
@@ -1271,10 +1687,15 @@ public class GameHud : MonoBehaviour
         int days = TournamentSchedule.DaysAway(calendar, occurrence);
         VisualElement body = BeginCard("Skip ahead", OpenTournaments);
         body.Add(HudUi.Body($"Sleep through to the {def.DisplayName}?"));
+        bool campMorning = director.IsRegistered(occurrence);
+        string place = campMorning ? "camp" : "cabin";
         body.Add(HudUi.Muted(days == 1
-            ? $"You wake at the cabin on {calendar.DateLabelFor(occurrence.DayIndex)}, one day from now."
-            : $"You wake at the cabin on {calendar.DateLabelFor(occurrence.DayIndex)}, {days} days from now."));
-        body.Add(HudUi.Muted($"Boat to the camp by {GameCalendar.FormatHour(def.StartHour)} or you're left out."));
+            ? $"You wake at the {place} on {calendar.DateLabelFor(occurrence.DayIndex)}, one day from now."
+            : $"You wake at the {place} on {calendar.DateLabelFor(occurrence.DayIndex)}, {days} days from now."));
+        if (campMorning)
+            body.Add(HudUi.Muted($"Blast-off is at {GameCalendar.FormatHour(def.StartHour)}."));
+        else
+            body.Add(HudUi.Muted($"Boat to the camp by {GameCalendar.FormatHour(def.StartHour)} or you're left out."));
 
         director.RegistrationsBefore(occurrence.DayIndex, skipScratch);
         if (skipScratch.Count > 0)
@@ -1559,6 +1980,8 @@ public class GameHud : MonoBehaviour
             return;
 
         string status = director != null ? director.StatusLine : "";
+        if (string.IsNullOrEmpty(status) && TournamentLobby.Instance != null)
+            status = TournamentLobby.Instance.StatusLine;
         bool live = !string.IsNullOrEmpty(status);
         if (tourneyChipLabel != null)
             tourneyChipLabel.text = status;
@@ -1607,6 +2030,7 @@ public class GameHud : MonoBehaviour
         if (kept == null || kept.Count == 0)
         {
             bagPopover.Add(HudUi.Body("No keepers yet"));
+            AddFriendWeighIn(bagPopover);
             return;
         }
 
@@ -1640,6 +2064,7 @@ public class GameHud : MonoBehaviour
         }
 
         bagPopover.Add(HudUi.Muted($"{director.BagFish}/{director.BagLimit}  ·  {director.BagPounds:0.00} lb"));
+        AddFriendWeighIn(bagPopover);
     }
 
     void PlaceBagPopover(GeometryChangedEvent _)
@@ -1899,6 +2324,7 @@ public class GameHud : MonoBehaviour
     {
         ClosePopovers();
         HudInput.Typing = false;
+        tournamentsOpen = false;
         if (modalLayer != null)
             modalLayer.style.display = DisplayStyle.None;
         if (mapJournalLayer != null)
@@ -2301,7 +2727,7 @@ public class GameHud : MonoBehaviour
     {
         Board,
         Entered,
-        Past
+        Friends
     }
 }
 

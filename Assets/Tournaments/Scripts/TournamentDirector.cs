@@ -36,10 +36,10 @@ public class TournamentDirector : MonoBehaviour
 
     [SerializeField, Min(1)] int scheduleLength = 8;
 
-    [Tooltip("How early a registered morning starts, so there is time to boat from the cabin to the camp.")]
-    [SerializeField, Min(0.25f)] float checkInLeadHours = 1.5f;
+    [Tooltip("Hour an entered tournament morning starts at camp. Ordinary days still use the cabin wake.")]
+    [SerializeField, Range(0f, 24f)] float tournamentWakeHour = 6.5f;
 
-    [Tooltip("Minutes after blast-off the player can still check in. Mornings always start at 6, so the run to camp is tight.")]
+    [Tooltip("Hours after blast-off the player can still check in if they wander off the grounds.")]
     [SerializeField, Min(0f)] float lateCheckInHours = 0.5f;
 
     readonly List<TournamentOccurrence> registrations = new List<TournamentOccurrence>();
@@ -58,10 +58,12 @@ public class TournamentDirector : MonoBehaviour
     public event Action<string> Notice;
 
     public event Action BagChanged;
+    public event Action<CatchRecord> CullRequired;
     public event Action<TournamentResult> Finished;
     public event Action<TournamentPhase> PhaseChanged;
 
     public TournamentPhase Phase { get; private set; } = TournamentPhase.Idle;
+    public bool IsFriendEvent { get; private set; }
     public TournamentOccurrence Active => active;
     public TournamentDefinition ActiveDefinition => active.Definition;
     public bool IsRunning => Phase == TournamentPhase.Running;
@@ -73,6 +75,26 @@ public class TournamentDirector : MonoBehaviour
     public IReadOnlyList<CatchRecord> Bag => bag.Kept;
     public IReadOnlyList<TournamentResult> History => history;
     public IReadOnlyList<TournamentDefinition> Definitions => definitions;
+
+    /// <summary>The catch waiting to be culled into the bag, or null.</summary>
+    public CatchRecord PendingCull { get; private set; }
+
+    /// <summary>Player chose to replace the fish at <paramref name="index"/>.</summary>
+    public void AcceptCull(int index)
+    {
+        if (PendingCull == null)
+            return;
+
+        bag.Replace(index, PendingCull);
+        PendingCull = null;
+        BagChanged?.Invoke();
+    }
+
+    /// <summary>Player chose to release the new catch.</summary>
+    public void ReleaseCull()
+    {
+        PendingCull = null;
+    }
 
     /// <summary>Live entries, nearest day first is the caller's job.</summary>
     public void CopyRegistrations(List<TournamentOccurrence> into)
@@ -105,6 +127,8 @@ public class TournamentDirector : MonoBehaviour
             {
                 string weight = $"{BagPounds:0.00} lb";
                 string count = def.BagLimit > 1 ? $"{BagFish}/{def.BagLimit}" : $"{BagFish}";
+                if (IsFriendEvent)
+                    return $"{def.DisplayName}  ·  {count}  ·  {weight}  ·  weigh in when you're done";
                 return $"{def.DisplayName}  ·  {count}  ·  {weight}  ·  lines out {GameCalendar.FormatHour(def.EndHour)}";
             }
 
@@ -197,6 +221,16 @@ public class TournamentDirector : MonoBehaviour
         data.history.Clear();
         data.history.AddRange(history);
 
+        if (IsFriendEvent)
+        {
+            data.phase = (int)TournamentPhase.Idle;
+            data.activeDefinitionId = "";
+            data.activeDayIndex = 0;
+            data.bagLimit = bag.Limit;
+            data.bag.Clear();
+            return;
+        }
+
         data.phase = (int)Phase;
         data.activeDefinitionId = active.Definition != null ? active.Definition.Id : "";
         data.activeDayIndex = active.DayIndex;
@@ -205,7 +239,7 @@ public class TournamentDirector : MonoBehaviour
         data.bag.AddRange(bag.Kept);
     }
 
-    TournamentDefinition FindDefinition(string id)
+    public TournamentDefinition FindDefinition(string id)
     {
         if (string.IsNullOrEmpty(id))
             return null;
@@ -239,6 +273,12 @@ public class TournamentDirector : MonoBehaviour
     /// </summary>
     void OnBeforeTurnIn()
     {
+        if (IsFriendEvent)
+        {
+            TournamentLobby.Instance?.ForfeitAndLeave();
+            return;
+        }
+
         if (Phase != TournamentPhase.Idle)
             Finish(true);
     }
@@ -270,7 +310,7 @@ public class TournamentDirector : MonoBehaviour
                 return;
 
             campNoticeDay = today;
-            Notice?.Invoke($"{def.DisplayName} is this morning. Be at the camp by {GameCalendar.FormatHour(def.StartHour)} or you're left out.");
+            Notice?.Invoke($"{def.DisplayName} is this morning. Blast-off is at {GameCalendar.FormatHour(def.StartHour)}.");
             return;
         }
     }
@@ -284,6 +324,9 @@ public class TournamentDirector : MonoBehaviour
 
         int today = conditions.DayIndex;
         float hour = conditions.Hour;
+
+        if (IsFriendEvent)
+            return;
 
         if (Phase != TournamentPhase.Idle)
         {
@@ -404,33 +447,16 @@ public class TournamentDirector : MonoBehaviour
     }
 
     /// <summary>
-    /// Early cabin wake on a registered morning, so winter dawn cannot land
-    /// after blast-off. False when that day has no entry.
+    /// Camp wake on a morning the player has entered. False when that day
+    /// has no entry, so the cabin hour stays in effect.
     /// </summary>
     public bool TryGetWakeHour(int dayIndex, out float hour)
     {
         hour = 0f;
-        float best = float.MaxValue;
-        bool found = false;
-        for (int i = 0; i < registrations.Count; i++)
-        {
-            TournamentOccurrence occ = registrations[i];
-            TournamentDefinition def = occ.Definition;
-            if (def == null || occ.DayIndex != dayIndex)
-                continue;
-
-            float wake = def.StartHour - checkInLeadHours;
-            if (wake < best)
-            {
-                best = wake;
-                found = true;
-            }
-        }
-
-        if (!found)
+        if (!HasRegistrationOn(dayIndex))
             return false;
 
-        hour = Mathf.Max(0f, best);
+        hour = Mathf.Repeat(tournamentWakeHour, 24f);
         return true;
     }
 
@@ -445,18 +471,26 @@ public class TournamentDirector : MonoBehaviour
         return false;
     }
 
-    /// <summary>True when the player could still enter: unlocked, not entered, not started, fee covered, and not already booked that morning.</summary>
+    /// <summary>True when the player could still enter: unlocked, not entered, not today, fee covered, and not already booked that morning.</summary>
     public bool CanRegister(TournamentOccurrence occurrence)
     {
         if (!occurrence.IsValid || IsRegistered(occurrence) || Phase != TournamentPhase.Idle)
             return false;
-        if (HasPassed(occurrence))
+        if (EntryClosed(occurrence))
             return false;
         if (!MeetsReputation(occurrence.Definition))
             return false;
         if (HasRegistrationOn(occurrence.DayIndex))
             return false;
         return AffordableFee(occurrence.Definition);
+    }
+
+    /// <summary>Signups close the night before, so a camp morning only happens after an advance entry.</summary>
+    public bool EntryClosed(TournamentOccurrence occurrence)
+    {
+        if (!occurrence.IsValid || conditions == null)
+            return false;
+        return occurrence.DayIndex <= conditions.DayIndex;
     }
 
     public bool MeetsReputation(TournamentDefinition definition)
@@ -708,11 +742,281 @@ public class TournamentDirector : MonoBehaviour
         history.Insert(0, result);
         active = default;
         warned = false;
+        PendingCull = null;
         bag.Reset(def.BagLimit);
         SetPhase(TournamentPhase.Idle);
         BagChanged?.Invoke();
         Finished?.Invoke(result);
         SaveService.Instance?.Save();
+    }
+
+    /// <summary>Host a friend lobby for this field, or for one already on Entered.</summary>
+    public bool CanInvite(TournamentDefinition definition)
+    {
+        if (HasUpcomingEntry(definition))
+            return true;
+        if (!CanJoinFriend(definition))
+            return false;
+        return !ScheduledToday(definition);
+    }
+
+    /// <summary>Board signup for this field on a later morning. The entry fee is already paid.</summary>
+    public bool HasUpcomingEntry(TournamentDefinition definition)
+    {
+        if (definition == null || conditions == null || Phase != TournamentPhase.Idle)
+            return false;
+
+        for (int i = 0; i < registrations.Count; i++)
+        {
+            TournamentOccurrence row = registrations[i];
+            if (row.Definition == null || row.Definition.Id != definition.Id)
+                continue;
+            if (row.DayIndex <= conditions.DayIndex)
+                continue;
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>Join a lobby the host already opened. Guest calendar does not block; the host already picked the field.</summary>
+    public bool CanJoinFriend(TournamentDefinition definition)
+    {
+        if (definition == null || Phase != TournamentPhase.Idle || IsFriendEvent)
+            return false;
+        if (!MeetsReputation(definition))
+            return false;
+        return AffordableFee(definition);
+    }
+
+    /// <summary>This field is on today's calendar. No same-day Enter or Invite.</summary>
+    public bool ScheduledToday(TournamentDefinition definition)
+    {
+        if (definition == null || conditions == null)
+            return false;
+        return definition.Weekday == conditions.Calendar.Weekday;
+    }
+
+    public bool TryPayEntry(TournamentDefinition definition)
+    {
+        if (definition == null)
+            return false;
+        if (HasUpcomingEntry(definition))
+            return true;
+        if (!AffordableFee(definition))
+            return false;
+        AdjustMoney(-definition.EntryFee);
+        return true;
+    }
+
+    public void RefundEntry(TournamentDefinition definition)
+    {
+        if (definition == null || definition.EntryFee <= 0)
+            return;
+        AdjustMoney(definition.EntryFee);
+    }
+
+    /// <summary>Starts this event immediately with a friend. Same bag and purse as the board, no camp check-in.</summary>
+    public bool StartFriendEvent(TournamentDefinition definition)
+    {
+        if (Phase != TournamentPhase.Idle)
+            return false;
+
+        TournamentDefinition def = definition != null ? definition : FriendDefinition();
+        if (def == null || conditions == null)
+            return false;
+
+        IsFriendEvent = true;
+        warned = false;
+        PendingCull = null;
+        active = new TournamentOccurrence(def, conditions.DayIndex);
+        bag.Reset(def.BagLimit);
+        SetPhase(TournamentPhase.Running);
+        BagChanged?.Invoke();
+        Notice?.Invoke($"{def.DisplayName} is underway. Weigh in from Tournaments when you are done.");
+        return true;
+    }
+
+    public void CancelFriendEvent()
+    {
+        if (!IsFriendEvent)
+            return;
+
+        PendingCull = null;
+        warned = false;
+        active = default;
+        bag.Reset(5);
+        IsFriendEvent = false;
+        SetPhase(TournamentPhase.Idle);
+        BagChanged?.Invoke();
+    }
+
+    public void NoticeFriend(string message)
+    {
+        if (!string.IsNullOrEmpty(message))
+            Notice?.Invoke(message);
+    }
+
+    public TournamentResult BuildFriendResult(IReadOnlyList<FriendBag> bags, long clientId, string playerId)
+    {
+        TournamentDefinition def = active.Definition ?? FriendDefinition();
+        if (def == null)
+            return null;
+
+        standings.Clear();
+        TournamentField.Build(active.IsValid ? active : new TournamentOccurrence(def, conditions != null ? conditions.DayIndex : 0), Bite(), standings);
+
+        for (int i = 0; i < bags.Count; i++)
+        {
+            FriendBag entry = bags[i];
+            standings.Add(new TournamentStanding
+            {
+                Name = string.IsNullOrEmpty(entry.Name) ? "Angler" : entry.Name,
+                Pounds = entry.Forfeited ? 0f : Mathf.Round(entry.Pounds * 100f) * 0.01f,
+                Fish = entry.Forfeited ? 0 : entry.Fish,
+                IsPlayer = true,
+                PlayerId = entry.PlayerId ?? "",
+                LunkerLargemouth = entry.Forfeited ? 0f : entry.LunkerLargemouth,
+                LunkerSmallmouth = entry.Forfeited ? 0f : entry.LunkerSmallmouth
+            });
+        }
+
+        standings.Sort(TournamentField.CompareHeaviest);
+        TournamentField.AwardLunkers(standings);
+
+        FriendBag mine = default;
+        bool found = false;
+        for (int i = 0; i < bags.Count; i++)
+        {
+            if (!SameAngler(bags[i], clientId, playerId))
+                continue;
+            mine = bags[i];
+            found = true;
+            break;
+        }
+
+        string mineName = found
+            ? (string.IsNullOrEmpty(mine.Name) ? "Angler" : mine.Name)
+            : "";
+        float minePounds = found && !mine.Forfeited ? Mathf.Round(mine.Pounds * 100f) * 0.01f : 0f;
+        bool marked = false;
+        for (int i = 0; i < standings.Count; i++)
+        {
+            TournamentStanding row = standings[i];
+            bool local = found && !marked && row.Name == mineName
+                && Mathf.Abs(row.Pounds - minePounds) < 0.001f
+                && (string.IsNullOrEmpty(mine.PlayerId) || row.PlayerId == mine.PlayerId);
+            row.IsPlayer = local;
+            if (local)
+                marked = true;
+            standings[i] = row;
+        }
+
+        int place = standings.Count;
+        bool wonLm = false;
+        bool wonSm = false;
+        for (int i = 0; i < standings.Count; i++)
+        {
+            if (!standings[i].IsPlayer)
+                continue;
+            place = i + 1;
+            wonLm = standings[i].WonLunkerLargemouth;
+            wonSm = standings[i].WonLunkerSmallmouth;
+            break;
+        }
+
+        bool forfeited = !found || mine.Forfeited;
+        float raw = found ? mine.Pounds : 0f;
+        float scored = forfeited ? 0f : raw;
+        int placePayout = forfeited || scored <= 0.01f ? 0 : def.PayoutFor(place);
+        int lunkerPay = 0;
+        int lunkerRep = 0;
+        if (!forfeited)
+        {
+            if (wonLm)
+            {
+                lunkerPay += def.LunkerPayout(true);
+                lunkerRep += def.LunkerReputation(true);
+            }
+
+            if (wonSm)
+            {
+                lunkerPay += def.LunkerPayout(false);
+                lunkerRep += def.LunkerReputation(false);
+            }
+        }
+
+        int payout = placePayout + lunkerPay;
+        int reputation = def.ReputationFor(place, forfeited) + lunkerRep;
+        TournamentStanding winner = standings.Count > 0 ? standings[0] : default;
+
+        return new TournamentResult
+        {
+            Id = def.Id,
+            DisplayName = def.DisplayName,
+            FormatLabel = def.FormatLabel,
+            DayIndex = conditions != null ? conditions.DayIndex : 0,
+            DateLabel = conditions != null ? conditions.Calendar.DateLabelFor(conditions.DayIndex) : "",
+            Place = place,
+            Entrants = standings.Count,
+            Fish = forfeited ? 0 : mine.Fish,
+            RawPounds = raw,
+            Penalty = 0f,
+            Pounds = scored,
+            EntryFee = def.EntryFee,
+            Payout = payout,
+            PlacePayout = placePayout,
+            Reputation = reputation,
+            Forfeited = forfeited,
+            WinnerName = winner.Name,
+            WinnerPounds = winner.Pounds,
+            LunkerLargemouth = forfeited ? 0f : mine.LunkerLargemouth,
+            LunkerSmallmouth = forfeited ? 0f : mine.LunkerSmallmouth,
+            WonLunkerLargemouth = wonLm,
+            WonLunkerSmallmouth = wonSm,
+            LunkerPayout = lunkerPay,
+            LunkerReputation = lunkerRep,
+            Standings = new List<TournamentStanding>(standings)
+        };
+    }
+
+    public void ApplyFriendResult(TournamentResult result)
+    {
+        if (result == null)
+            return;
+
+        AdjustMoney(result.Payout);
+        if (progress != null)
+            progress.AddReputation(result.Reputation);
+
+        history.Insert(0, result);
+        PendingCull = null;
+        warned = false;
+        active = default;
+        bag.Reset(result.Fish > 0 ? Mathf.Max(1, result.Fish) : 5);
+        IsFriendEvent = false;
+        SetPhase(TournamentPhase.Idle);
+        BagChanged?.Invoke();
+        Finished?.Invoke(result);
+        SaveService.Instance?.Save();
+    }
+
+    public static bool SameAngler(FriendBag bag, long clientId, string playerId)
+    {
+        if (bag.ClientId == clientId)
+            return true;
+        return !string.IsNullOrEmpty(playerId) && bag.PlayerId == playerId;
+    }
+
+    TournamentDefinition FriendDefinition()
+    {
+        for (int i = 0; i < definitions.Count; i++)
+        {
+            if (definitions[i] != null)
+                return definitions[i];
+        }
+
+        return null;
     }
 
     void SetPhase(TournamentPhase next)
@@ -725,8 +1029,7 @@ public class TournamentDirector : MonoBehaviour
     }
 
     /// <summary>
-    /// How well the field should do today. Derived from the seasonal phase for
-    /// now; the weather pass can replace this with a real bite estimate.
+    /// Small seasonal nudge on rival bags. Weather can replace this later.
     /// </summary>
     float Bite()
     {
@@ -735,12 +1038,12 @@ public class TournamentDirector : MonoBehaviour
 
         return conditions.Phase switch
         {
-            FishingPhase.Prespawn => 1.1f,
-            FishingPhase.Spawn => 1.15f,
-            FishingPhase.Postspawn => 0.9f,
+            FishingPhase.Prespawn => 1.04f,
+            FishingPhase.Spawn => 1.06f,
+            FishingPhase.Postspawn => 0.96f,
             FishingPhase.Summer => 1f,
-            FishingPhase.FallFeeding => 1.1f,
-            _ => 0.7f
+            FishingPhase.FallFeeding => 1.04f,
+            _ => 0.92f
         };
     }
 
@@ -770,8 +1073,17 @@ public class TournamentDirector : MonoBehaviour
     {
         if (Phase != TournamentPhase.Running)
             return;
-        if (bag.Consider(record))
+
+        var result = bag.Offer(record);
+        if (result == TournamentBag.OfferResult.Kept)
+        {
             BagChanged?.Invoke();
+            return;
+        }
+
+        // Bag is full — hold the catch and let the UI ask the player.
+        PendingCull = record;
+        CullRequired?.Invoke(record);
     }
 
     void Resolve()

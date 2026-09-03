@@ -40,7 +40,7 @@ public class DayCycle : MonoBehaviour
     [SerializeField] float curfewAfterDuskHours = 1f;
     [Tooltip("How long before curfew the player is warned.")]
     [SerializeField] float warningLeadHours = 1.5f;
-    [Tooltip("Hour the player wakes each morning, including tournament days.")]
+    [Tooltip("Hour the player wakes on ordinary mornings. Entered tournament days use the camp hour.")]
     [SerializeField, Range(0f, 24f)] float wakeHour = GameCalendar.NewGameHour;
 
     [Header("Dock")]
@@ -60,6 +60,7 @@ public class DayCycle : MonoBehaviour
     PlayerBoatInteractor boatInteractor;
     PlayerProgress progress;
     TournamentDirector director;
+    TournamentSite site;
     BoatMotor boat;
     Vector3 homePosition;
     Quaternion homeRotation;
@@ -97,10 +98,11 @@ public class DayCycle : MonoBehaviour
     public float WarningHour => CurfewHour - Mathf.Max(0.25f, warningLeadHours);
     public float WakeHour => Mathf.Repeat(wakeHour, 24f);
 
-    /// <summary>Every morning starts at the authored wake hour, including tournament days.</summary>
+    /// <summary>Cabin hour, or the camp hour on a morning the player has entered.</summary>
     public float WakeHourFor(int dayIndex)
     {
-        _ = dayIndex;
+        if (director != null && director.TryGetWakeHour(dayIndex, out float hour))
+            return hour;
         return WakeHour;
     }
 
@@ -221,7 +223,10 @@ public class DayCycle : MonoBehaviour
             AwaitingContinue = false;
         }
 
-        ReturnHome();
+        int landing = conditions != null
+            ? conditions.DayIndex + (skipDays > 0 ? skipDays : 1)
+            : 0;
+        PlaceForMorning(landing);
         if (skipDays > 0)
         {
             conditions?.AdvanceDays(skipDays, -1f);
@@ -229,7 +234,6 @@ public class DayCycle : MonoBehaviour
         }
         else
         {
-            int landing = conditions != null ? conditions.DayIndex + 1 : 0;
             conditions?.AdvanceToHour(WakeHourFor(landing));
         }
 
@@ -251,11 +255,23 @@ public class DayCycle : MonoBehaviour
         warned = false;
     }
 
-    void ReturnHome()
+    /// <summary>
+    /// Entered tournament mornings put the player on their boat at the camp
+    /// dock. Every other morning returns to the cabin dock.
+    /// </summary>
+    void PlaceForMorning(int dayIndex)
     {
         fishing?.AbortFishing();
         boatInteractor?.ForceDisembark();
 
+        if (director != null && director.HasRegistrationOn(dayIndex) && TryPlaceAtCamp())
+            return;
+
+        PlaceAtHome();
+    }
+
+    void PlaceAtHome()
+    {
         if (boat != null)
             boat.transform.SetPositionAndRotation(mooringPosition, mooringRotation);
 
@@ -264,6 +280,35 @@ public class DayCycle : MonoBehaviour
 
         Vector3 position = homeAnchor != null ? homeAnchor.position : homePosition;
         Quaternion rotation = homeAnchor != null ? homeAnchor.rotation : homeRotation;
+        PlacePlayer(position, rotation);
+    }
+
+    bool TryPlaceAtCamp()
+    {
+        if (site == null)
+            site = FindFirstObjectByType<TournamentSite>();
+        if (site == null)
+            return false;
+
+        float water = conditions != null
+            ? conditions.WaterHeight
+            : boat != null ? boat.transform.position.y : 0f;
+        if (!site.TryGetMorningPose(water, out Vector3 playerPos, out Quaternion playerRot, out Vector3 boatPos, out Quaternion boatRot))
+            return false;
+
+        if (boat != null)
+            boat.transform.SetPositionAndRotation(boatPos, boatRot);
+        if (boat != null && boatInteractor != null && boatInteractor.ForceBoard(boat))
+            return true;
+
+        PlacePlayer(playerPos, playerRot);
+        return true;
+    }
+
+    void PlacePlayer(Vector3 position, Quaternion rotation)
+    {
+        if (player == null)
+            return;
 
         var controller = player.GetComponent<CharacterController>();
         if (controller != null)
@@ -288,6 +333,8 @@ public class DayCycle : MonoBehaviour
 
         if (director == null)
             director = FindFirstObjectByType<TournamentDirector>();
+        if (site == null)
+            site = FindFirstObjectByType<TournamentSite>();
         if (boat == null)
             boat = FindPlayerBoat();
         if (dock == null && !string.IsNullOrEmpty(dockObjectName))

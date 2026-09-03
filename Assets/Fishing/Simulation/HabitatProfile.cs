@@ -186,12 +186,12 @@ public class HabitatProfile : ScriptableObject
     {
         switch (phase)
         {
-            case FishingPhase.Prespawn: return 1.15f;
-            case FishingPhase.Spawn: return 1.05f;
-            case FishingPhase.Postspawn: return 0.82f;
-            case FishingPhase.Summer: return 0.86f;
-            case FishingPhase.FallFeeding: return 1.22f;
-            case FishingPhase.Winter: return 0.52f;
+            case FishingPhase.Prespawn: return 1.06f;
+            case FishingPhase.Spawn: return 1.03f;
+            case FishingPhase.Postspawn: return 0.94f;
+            case FishingPhase.Summer: return 0.96f;
+            case FishingPhase.FallFeeding: return 1.08f;
+            case FishingPhase.Winter: return 0.88f;
             default: return 1f;
         }
     }

@@ -143,6 +143,27 @@ public class PlayerBoatInteractor : MonoBehaviour
         HudCues.Clear(CueId);
     }
 
+    /// <summary>Puts the player on this hull. Tournament mornings start already boarded.</summary>
+    public bool ForceBoard(BoatMotor boat)
+    {
+        if (boat == null || !boat.Boardable || boat.Seat == null)
+            return false;
+        if (occupiedBoat == boat)
+            return true;
+        if (occupiedBoat != null)
+            ForceDisembark();
+
+        occupiedBoat = boat;
+        motor.enabled = false;
+        if (controller != null)
+            controller.enabled = false;
+
+        transform.SetParent(boat.transform, true);
+        SnapTo(boat.Seat);
+        boat.SetOccupied(true);
+        return true;
+    }
+
     void TryBoard()
     {
         BoatMotor boat = FindClosestBoat(boardRange);

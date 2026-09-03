@@ -205,6 +205,46 @@ public static class HudUi
         return glyph;
     }
 
+    /// <summary>1st / 2nd / 3rd podium readout for the header.</summary>
+    public static VisualElement PlaceChip(out Label first, out Label second, out Label third)
+    {
+        var chip = new VisualElement();
+        chip.AddToClassList("hud-place-chip");
+        chip.tooltip = "1st  ·  2nd  ·  3rd";
+        chip.pickingMode = PickingMode.Ignore;
+        chip.Add(PlaceStep("2", "hud-place-step--2", out second));
+        chip.Add(PlaceStep("1", "hud-place-step--1", out first));
+        chip.Add(PlaceStep("3", "hud-place-step--3", out third));
+        return chip;
+    }
+
+    static VisualElement PlaceStep(string rank, string stepClass, out Label count)
+    {
+        var step = new VisualElement();
+        step.AddToClassList("hud-place-step");
+        step.AddToClassList(stepClass);
+        step.pickingMode = PickingMode.Ignore;
+
+        var countWrap = new VisualElement();
+        countWrap.AddToClassList("hud-place-count-wrap");
+        countWrap.pickingMode = PickingMode.Ignore;
+        count = new Label("0");
+        count.AddToClassList("hud-place-count");
+        count.pickingMode = PickingMode.Ignore;
+        countWrap.Add(count);
+        step.Add(countWrap);
+
+        var block = new VisualElement();
+        block.AddToClassList("hud-place-block");
+        block.pickingMode = PickingMode.Ignore;
+        var mark = new Label(rank);
+        mark.AddToClassList("hud-place-rank");
+        mark.pickingMode = PickingMode.Ignore;
+        block.Add(mark);
+        step.Add(block);
+        return step;
+    }
+
     /// <summary>Compact header readout such as money or reputation.</summary>
     public static VisualElement StatChip(string tooltip, Action<MeshGenerationContext> glyph, out Label value)
     {

@@ -144,7 +144,7 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 7b4e2c91a6d843f0b1c5e8d9a0f3b246, type: 2}
   - {fileID: 11400000, guid: 5a18d0c3e7f94b2a9c6e4d1f8b0a3759, type: 2}
   scheduleLength: 8
-  checkInLeadHours: 1.5
+  tournamentWakeHour: 6.5
 --- !u!114 &49412394987722123
 MonoBehaviour:
   m_ObjectHideFlags: 0

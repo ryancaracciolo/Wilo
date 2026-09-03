@@ -73,6 +73,9 @@ public class FishAgent : MonoBehaviour
     bool jumping;
     Vector3 jumpStart;
     Vector3 jumpEnd;
+    Vector3 groundCacheAt;
+    float groundCacheDepth;
+    float groundCacheTime;
 
     public FishSpecies Species { get; private set; }
     public FishSize Size { get; private set; }
@@ -285,7 +288,7 @@ public class FishAgent : MonoBehaviour
         if (mood != Mood.Following)
             planarTarget.y = pos.y;
         Vector3 next = Vector3.MoveTowards(pos, planarTarget, move * Time.deltaTime);
-        if (!HasSwimRoom(lake.GroundDepthMeters(next)))
+        if (!HasSwimRoom(GroundDepth(next)))
         {
             next.x = pos.x;
             next.z = pos.z;
@@ -606,10 +609,11 @@ public class FishAgent : MonoBehaviour
 
     float VisualLength()
     {
-        float inches = Size.LengthInches;
-        if (inches < 1f && Species != null)
-            inches = Species.TypicalLengthInches;
-        float meters = Mathf.Max(1f, inches) * 0.0254f;
+        // World length of this instance. Scale already encodes the fish's size,
+        // so use the prefab's authored inches — multiplying by Size.LengthInches
+        // again made big bass hang below the hand.
+        float authoredInches = Species != null ? Species.PrefabLengthInches : 19.5f;
+        float meters = Mathf.Max(1f, authoredInches) * 0.0254f;
         if (prefabScale.x > 0.01f)
             meters *= transform.localScale.x / prefabScale.x;
         return Mathf.Max(0.22f, meters);
@@ -915,10 +919,7 @@ public class FishAgent : MonoBehaviour
 
     Vector3 MouthPoint()
     {
-        float visualMeters = Size.LengthInches * 0.0254f;
-        if (prefabScale.x > 0.01f)
-            visualMeters *= transform.localScale.x / prefabScale.x;
-        return transform.position + transform.forward * Mathf.Max(0.18f, visualMeters * 0.38f);
+        return transform.position + transform.forward * Mathf.Max(0.18f, VisualLength() * 0.38f);
     }
 
     Vector3 AnglerPlanar()
@@ -1018,7 +1019,7 @@ public class FishAgent : MonoBehaviour
             return;
 
         Vector3 pos = transform.position;
-        float ground = lake.GroundDepthMeters(pos);
+        float ground = GroundDepth(pos);
         pos.y = ColumnY(ground);
         StayInWater(ref pos, ground);
         transform.position = pos;
@@ -1031,7 +1032,7 @@ public class FishAgent : MonoBehaviour
             return;
 
         Vector3 pos = transform.position;
-        float ground = lake.GroundDepthMeters(pos);
+        float ground = GroundDepth(pos);
         StayInWater(ref pos, ground);
         pos.y = Mathf.MoveTowards(pos.y, ColumnY(ground), Mathf.Max(1f, speed * 2f) * Time.deltaTime);
         StayInWater(ref pos, ground);
@@ -1044,8 +1045,22 @@ public class FishAgent : MonoBehaviour
             return;
 
         Vector3 pos = transform.position;
-        StayInWater(ref pos, lake.GroundDepthMeters(pos));
+        StayInWater(ref pos, GroundDepth(pos));
         transform.position = pos;
+    }
+
+    float GroundDepth(Vector3 world)
+    {
+        if (lake == null)
+            return 0f;
+        if (Time.time - groundCacheTime < 0.12f
+            && (world - groundCacheAt).sqrMagnitude < 0.36f)
+            return groundCacheDepth;
+
+        groundCacheAt = world;
+        groundCacheTime = Time.time;
+        groundCacheDepth = lake.GroundDepthMeters(world);
+        return groundCacheDepth;
     }
 
     /// <summary>

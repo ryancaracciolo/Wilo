@@ -22,9 +22,94 @@ public class TournamentSite : MonoBehaviour
     [Tooltip("The camp clearing around this marker, even if the ground is a low bank.")]
     [SerializeField, Min(1f)] float clearingRadius = 12f;
 
+    static readonly float[] MooringSides = { -4f, -3f, -2f, 2f, 3f, 4f };
+    static readonly float[] MooringOuts = { 1.5f, 3f, 4.5f, 6f, 8f };
+
     public Transform Dock => DockRoot;
 
     public Vector3 DockPosition => DockRoot != null ? DockRoot.position : transform.position;
+
+    /// <summary>
+    /// End of the camp dock: a hull in the water off the tip, bow out.
+    /// Player pose is the tip pad, used only if boarding fails.
+    /// </summary>
+    public bool TryGetMorningPose(
+        float waterHeight,
+        out Vector3 playerPosition,
+        out Quaternion playerRotation,
+        out Vector3 boatPosition,
+        out Quaternion boatRotation)
+    {
+        Transform pad = EndLanding();
+        Transform facing = pad != null ? pad : (DockRoot != null ? DockRoot : transform);
+
+        playerPosition = pad != null ? pad.position : transform.position;
+        playerRotation = facing.rotation;
+
+        Vector3 origin = facing.position;
+        Vector3 forward = facing.forward;
+        forward.y = 0f;
+        if (forward.sqrMagnitude < 0.01f)
+            forward = Vector3.forward;
+        forward.Normalize();
+        Vector3 right = facing.right;
+        right.y = 0f;
+        if (right.sqrMagnitude < 0.01f)
+            right = Vector3.Cross(Vector3.up, forward);
+        right.Normalize();
+
+        boatPosition = origin + right * 2f + forward * 3f;
+        float best = float.MaxValue;
+        var conditions = FindFirstObjectByType<WorldConditions>();
+        for (int s = 0; s < MooringSides.Length; s++)
+        {
+            for (int o = 0; o < MooringOuts.Length; o++)
+            {
+                Vector3 candidate = origin + right * MooringSides[s] + forward * MooringOuts[o];
+                float depth = conditions != null ? conditions.GeometricDepthMeters(candidate) : 0.8f;
+                if (depth < 0.55f)
+                    continue;
+
+                float dx = candidate.x - origin.x;
+                float dz = candidate.z - origin.z;
+                float dist = dx * dx + dz * dz;
+                if (dist >= best)
+                    continue;
+
+                best = dist;
+                boatPosition = candidate;
+            }
+        }
+
+        boatPosition.y = waterHeight;
+        boatRotation = Quaternion.LookRotation(-forward, Vector3.up);
+        return true;
+    }
+
+    Transform EndLanding()
+    {
+        BoatDock[] pads = FindObjectsByType<BoatDock>(FindObjectsSortMode.None);
+        Transform best = null;
+        float bestSq = -1f;
+        Vector3 origin = DockPosition;
+        origin.y = 0f;
+        for (int i = 0; i < pads.Length; i++)
+        {
+            if (pads[i] == null)
+                continue;
+
+            Vector3 at = pads[i].transform.position;
+            at.y = 0f;
+            float sq = (at - origin).sqrMagnitude;
+            if (sq > 50f * 50f || sq <= bestSq)
+                continue;
+
+            bestSq = sq;
+            best = pads[i].transform;
+        }
+
+        return best != null ? best : DockRoot;
+    }
 
     public bool Contains(Vector3 worldPosition)
     {

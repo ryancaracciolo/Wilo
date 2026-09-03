@@ -32,6 +32,8 @@ public class PlayerFishing : MonoBehaviour
     [SerializeField] float retrieveSpeed = 7.5f;
     [SerializeField] float retrieveLiftDistance = 1.65f;
     [SerializeField] float doubleClickWindow = 0.32f;
+    [SerializeField] float fullRetrieveSpeedMultiplier = 4f;
+    [SerializeField] float maxLineSanityDistance = 90f;
     [SerializeField] float arcHeight = 3.15f;
     [SerializeField] Vector3 castOriginOffset = new Vector3(0f, 0.9f, 0.22f);
 
@@ -76,10 +78,10 @@ public class PlayerFishing : MonoBehaviour
     [SerializeField] Vector3 poleCastLean = new Vector3(0.95f, 0.12f, 0.5f);
 
     [Header("Catch")]
-    [SerializeField] Vector3 catchHoldLocal = new Vector3(-0.6f, 0.74f, 0.85f);
+    [SerializeField] Vector3 catchHoldPos = new Vector3(-1f, 1.5f, 0f);
 
     [SerializeField, Range(0f, 0.8f)]
-    float catchTowardCamera = 0.4f;
+    float catchCameraOffset = 0.55f;
 
     /// <summary>Lower lip grip for two-hand holds so a long bass clears the hat.</summary>
     [SerializeField] Vector3 catchHoldTwoHandLocal = new Vector3(-0.18f, 0.54f, 0.28f);
@@ -91,13 +93,13 @@ public class PlayerFishing : MonoBehaviour
     [SerializeField] Vector3 catchHangLocal = new Vector3(0.72f, -0.52f, 0f);
 
     [SerializeField, Range(0.3f, 0.7f)]
-    float catchLipAlong = 0.6f;
+    float catchLipDist = 0.422f;
     [SerializeField, Range(0f, 0.08f)]
-    float catchLipBelly = 0.0275f;
+    float catchLipDrop = 0.0179f;
     [SerializeField, Range(0f, 0.2f)]
-    float catchPinchAlong = 0.12f;
+    float catchGripAlong = 0.127f;
     [SerializeField, Range(0f, 0.35f)]
-    float catchPinchOut = 0.22f;
+    float catchGripOut = 0.238f;
     [SerializeField, Range(0.2f, 0.9f)]
     float catchSupportAlong = 0.52f;
     [SerializeField, Range(0f, 0.22f)]
@@ -545,6 +547,9 @@ public class PlayerFishing : MonoBehaviour
 
     void TickInWater()
     {
+        if (RecoverFromBrokenLine())
+            return;
+
         ApplySink();
 
         if (ConsumeDoubleClick())
@@ -573,6 +578,9 @@ public class PlayerFishing : MonoBehaviour
 
     void TickRetrieve()
     {
+        if (RecoverFromBrokenLine())
+            return;
+
         if (ConsumeDoubleClick())
             retrieveAllTheWay = true;
 
@@ -665,6 +673,9 @@ public class PlayerFishing : MonoBehaviour
 
     void TickFight()
     {
+        if (RecoverFromBrokenLine())
+            return;
+
         if (fight == null || hooked == null)
         {
             EndFishing();
@@ -945,7 +956,7 @@ public class PlayerFishing : MonoBehaviour
 
     Vector3 CatchHoldPoint()
     {
-        return transform.TransformPoint(catchHoldLocal) + transform.forward * catchTowardCamera;
+        return transform.TransformPoint(catchHoldPos) + transform.forward * catchCameraOffset;
     }
 
     Vector3 CatchHangDirection()
@@ -966,11 +977,11 @@ public class PlayerFishing : MonoBehaviour
         Vector3 hold = CatchHoldPoint();
         Vector3 lip = hold;
         if (pole != null)
-            lip = pole.PoseCatchHold(hold, hang, catchHoldWeight, catchPinchAlong, catchPinchOut);
+            lip = pole.PoseCatchHold(hold, hang, catchHoldWeight, catchGripAlong, catchGripOut);
         if (hooked == null)
             return;
 
-        hooked.ApplyCatchFit(catchLipAlong, catchLipBelly, catchSupportAlong, catchSupportOut, catchSupportDown);
+        hooked.ApplyCatchFit(catchLipDist, catchLipDrop, catchSupportAlong, catchSupportOut, catchSupportDown);
         hooked.HangFromLip(lip, transform, hang);
         if (pole != null && hooked.WantsTwoHandHold)
             pole.PoseCatchSupport(hooked.CatchSupportPoint, hang, catchHoldWeight);
@@ -1475,7 +1486,47 @@ public class PlayerFishing : MonoBehaviour
     {
         LureDefinition lure = Equipped();
         float speed = retrieveSpeed * (lure != null ? lure.RetrieveScale : 1f);
-        return retrieveAllTheWay ? speed * 2f : speed;
+        return retrieveAllTheWay ? speed * fullRetrieveSpeedMultiplier : speed;
+    }
+
+    bool RecoverFromBrokenLine()
+    {
+        if (phase == Phase.Idle || phase == Phase.Aiming || phase == Phase.ShowingCatch)
+            return false;
+
+        Vector3 end;
+        if (phase == Phase.Fighting && hooked != null)
+            end = hooked.LinePoint;
+        else if (lureObject != null && lureObject.activeSelf)
+            end = lureObject.transform.position;
+        else
+            return false;
+
+        if (EndpointIsBroken(end))
+        {
+            Debug.LogWarning($"PlayerFishing recovered broken line endpoint in phase {phase} at {end}.");
+            EndFishing();
+            return true;
+        }
+
+        Vector3 rod = RodTip();
+        float distance = Vector3.Distance(rod, end);
+        if (distance <= maxLineSanityDistance)
+            return false;
+
+        Debug.LogWarning($"PlayerFishing recovered runaway line distance of {distance:F1}m in phase {phase}.");
+        EndFishing();
+        return true;
+    }
+
+    static bool EndpointIsBroken(Vector3 value)
+    {
+        return !IsFinite(value.x) || !IsFinite(value.y) || !IsFinite(value.z);
+    }
+
+    static bool IsFinite(float value)
+    {
+        return !(float.IsNaN(value) || float.IsInfinity(value));
     }
 
     /// <summary>Where the lure settles when nobody is reeling. Bottom rides keep their clearance.</summary>

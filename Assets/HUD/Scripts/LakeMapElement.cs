@@ -125,8 +125,15 @@ public class LakeMapElement : VisualElement
 
     public void SetPlayer(Vector3 world, float yawDegrees)
     {
-        if (!TryWorldToUv(world, out playerUv))
+        if (!TryWorldToUv(world, out Vector2 uv))
             return;
+
+        if (hasPlayer
+            && (uv - playerUv).sqrMagnitude < 0.000001f
+            && Mathf.Abs(Mathf.DeltaAngle(playerYaw, yawDegrees)) < 2f)
+            return;
+
+        playerUv = uv;
         playerYaw = yawDegrees;
         hasPlayer = true;
         overlay.MarkDirtyRepaint();

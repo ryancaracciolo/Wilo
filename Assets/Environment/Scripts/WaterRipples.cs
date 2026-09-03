@@ -22,9 +22,11 @@ public class WaterRipples : MonoBehaviour
 
     readonly Vector4[] positions = new Vector4[MaxRipples];
     readonly Vector4[] parameters = new Vector4[MaxRipples];
-    int count;
+    readonly Vector4[] gpuPositions = new Vector4[MaxRipples];
+    readonly Vector4[] gpuParameters = new Vector4[MaxRipples];
     int writeIndex;
     int reservedWrite;
+    int lastLive = -1;
 
     public static WaterRipples Instance
     {
@@ -140,9 +142,6 @@ public class WaterRipples : MonoBehaviour
             writeIndex = (writeIndex + 1) % ambient;
         }
 
-        if (count < MaxRipples)
-            count = MaxRipples;
-
         positions[index] = new Vector4(
             worldPosition.x,
             worldPosition.z,
@@ -158,9 +157,28 @@ public class WaterRipples : MonoBehaviour
     void PushToShader()
     {
         float now = Time.time;
-        Shader.SetGlobalVectorArray("_WiloRipplePos", positions);
-        Shader.SetGlobalVectorArray("_WiloRippleParams", parameters);
-        Shader.SetGlobalFloat("_WiloRippleCount", count);
+        int live = 0;
+        for (int i = 0; i < MaxRipples; i++)
+        {
+            float age = now - positions[i].z;
+            if (age < 0f || age > positions[i].w)
+                continue;
+
+            gpuPositions[live] = positions[i];
+            gpuParameters[live] = parameters[i];
+            live++;
+        }
+
+        if (live == 0 && lastLive == 0)
+        {
+            Shader.SetGlobalFloat("_WiloRippleTime", now);
+            return;
+        }
+
+        lastLive = live;
+        Shader.SetGlobalVectorArray("_WiloRipplePos", gpuPositions);
+        Shader.SetGlobalVectorArray("_WiloRippleParams", gpuParameters);
+        Shader.SetGlobalFloat("_WiloRippleCount", live);
         Shader.SetGlobalFloat("_WiloRippleTime", now);
     }
 

@@ -121,9 +121,11 @@ public class DayNightVisuals : MonoBehaviour
     Color waterShallowBase;
     Color waterDeepBase;
     bool hasWaterBase;
+    float lastAppliedHour = -999f;
 
     void OnEnable()
     {
+        lastAppliedHour = -999f;
         Resolve();
         CaptureSky();
         CaptureWater();
@@ -138,6 +140,10 @@ public class DayNightVisuals : MonoBehaviour
 
     void LateUpdate()
     {
+        float hour = conditions != null ? conditions.Hour : -1f;
+        if (Mathf.Abs(hour - lastAppliedHour) < 0.002f)
+            return;
+        lastAppliedHour = hour;
         Apply();
     }
 

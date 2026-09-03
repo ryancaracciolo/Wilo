@@ -49,6 +49,8 @@ public class TournamentBag
     /// <summary>
     /// Offers a catch to the bag. Returns true when it counts, either by filling
     /// a slot or by displacing the lightest fish already kept.
+    /// Used only for save restoration; live catches go through
+    /// <see cref="Offer"/> so the player can choose which fish to cull.
     /// </summary>
     public bool Consider(CatchRecord record)
     {
@@ -68,6 +70,51 @@ public class TournamentBag
         kept.RemoveAt(kept.Count - 1);
         Insert(record);
         return true;
+    }
+
+    /// <summary>
+    /// Result of offering a catch to the bag.
+    /// </summary>
+    public enum OfferResult
+    {
+        /// <summary>Bag had room; the fish was kept automatically.</summary>
+        Kept,
+        /// <summary>Bag is full; the player must choose to replace or release.</summary>
+        BagFull
+    }
+
+    /// <summary>
+    /// Offers a catch to the bag during live play. If the bag has room the fish
+    /// is inserted immediately. If full, the catch is held as pending so the
+    /// player can pick which fish to cull (or release the new one).
+    /// </summary>
+    public OfferResult Offer(CatchRecord record)
+    {
+        if (record == null || record.Pounds <= 0f)
+            return OfferResult.Kept;
+
+        if (kept.Count < limit)
+        {
+            Insert(record);
+            return OfferResult.Kept;
+        }
+
+        return OfferResult.BagFull;
+    }
+
+    /// <summary>
+    /// Replaces the fish at <paramref name="index"/> with
+    /// <paramref name="record"/> and returns the culled fish.
+    /// </summary>
+    public CatchRecord Replace(int index, CatchRecord record)
+    {
+        if (record == null || index < 0 || index >= kept.Count)
+            return null;
+
+        CatchRecord culled = kept[index];
+        kept.RemoveAt(index);
+        Insert(record);
+        return culled;
     }
 
     void Insert(CatchRecord record)

@@ -698,7 +698,6 @@ public class IntroHud : MonoBehaviour
         else
         {
             dragging = false;
-            previewYaw += Time.deltaTime * 12f;
         }
 
         previewRoot.rotation = Quaternion.Euler(0f, previewYaw, 0f);
