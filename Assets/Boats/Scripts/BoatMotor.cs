@@ -118,6 +118,12 @@ public class BoatMotor : MonoBehaviour
         currentSpeed = 0f;
     }
 
+    public void Halt()
+    {
+        currentSpeed = 0f;
+        aiInput = Vector2.zero;
+    }
+
     void OnEnable()
     {
         CacheWaterHeight();

@@ -53,8 +53,11 @@ public class PlayerFishing : MonoBehaviour
 
     /// <summary>How fat the lure is when it ticks a rock or stump.</summary>
     const float LureRadius = 0.1f;
+    const float LineCoverClearance = 0.05f;
+    const int MaxLineCoverBends = 6;
     static readonly Collider[] CoverOverlap = new Collider[8];
     static readonly RaycastHit[] CoverHits = new RaycastHit[8];
+    static readonly RaycastHit[] LineHits = new RaycastHit[8];
 
     [Header("Lure")]
     [SerializeField] float lureClearance = 0.1f;
@@ -146,6 +149,7 @@ public class PlayerFishing : MonoBehaviour
     LureDefinition shownLure;
     LineRenderer line;
     Vector3[] lineBuffer;
+    Vector3[] castLineBuffer;
     FishingPole pole;
     CastMarker liveMarker;
     Vector3 flyStart;
@@ -1189,42 +1193,207 @@ public class PlayerFishing : MonoBehaviour
     void SetLineFromRod(int rodCount, Vector3 tip, Vector3 end, bool arc)
     {
         const int extra = 12;
-        int prefix = rodCount > 0 ? rodCount : 1;
-        int total = prefix + extra;
-        EnsureLinePoints(total);
-
-        Vector3 from;
-        int start;
-        if (rodCount > 0)
-        {
-            for (int i = 0; i < rodCount; i++)
-                line.SetPosition(i, lineBuffer[i]);
-            from = lineBuffer[rodCount - 1];
-            start = rodCount;
-        }
-        else
-        {
-            from = tip;
-            line.SetPosition(0, from);
-            start = 1;
-        }
+        Vector3 from = rodCount > 0 ? lineBuffer[rodCount - 1] : tip;
+        int start = rodCount > 0 ? rodCount : 1;
 
         float distance = Vector3.Distance(from, end);
         float bow = arc
             ? ArcHeight(distance)
             : Mathf.Min(0.35f, distance * 0.04f);
         bool pinToWater = !arc && phase != Phase.Fighting && end.y >= waterHeight - 0.04f;
-        int remaining = total - start;
-        for (int i = 0; i < remaining; i++)
+
+        EnsureCastLineBuffer(extra + 1 + MaxLineCoverBends);
+        castLineBuffer[0] = from;
+        for (int i = 0; i < extra; i++)
         {
-            float t = remaining <= 1 ? 1f : (i + 1) / (float)remaining;
+            float t = extra <= 1 ? 1f : (i + 1) / (float)extra;
             Vector3 point = Vector3.Lerp(from, end, t);
             float wave = Mathf.Sin(t * Mathf.PI) * bow;
             point.y += arc ? wave : -wave;
             if (pinToWater && point.y < waterHeight + 0.02f)
                 point.y = waterHeight + 0.02f;
-            line.SetPosition(start + i, point);
+            castLineBuffer[i + 1] = point;
         }
+
+        int castCount = DrapeLineOverCover(castLineBuffer, extra + 1);
+        EnsureLinePoints(start + castCount - 1);
+
+        if (rodCount > 0)
+        {
+            for (int i = 0; i < rodCount; i++)
+                line.SetPosition(i, lineBuffer[i]);
+        }
+        else
+            line.SetPosition(0, from);
+
+        for (int i = 1; i < castCount; i++)
+            line.SetPosition(start + i - 1, castLineBuffer[i]);
+    }
+
+    /// <summary>
+    /// Lift the sag over rock, timber, and the hull so the line rides those
+    /// surfaces instead of cutting through a stump or the boat on the way down.
+    /// </summary>
+    int DrapeLineOverCover(Vector3[] points, int count)
+    {
+        int mask = LineDrapeMask();
+        if (mask == 0 || count < 2)
+            return count;
+
+        for (int i = 1; i < count - 1; i++)
+            points[i] = LiftLineOffCover(points[i]);
+
+        int bends = 0;
+        int iSeg = 0;
+        while (iSeg < count - 1 && bends < MaxLineCoverBends && count < points.Length)
+        {
+            Vector3 a = points[iSeg];
+            Vector3 b = points[iSeg + 1];
+            Vector3 delta = b - a;
+            float dist = delta.magnitude;
+            if (dist < 0.1f)
+            {
+                iSeg++;
+                continue;
+            }
+
+            Vector3 origin = a + Vector3.up * 0.04f;
+            Vector3 to = b - origin;
+            float castDist = to.magnitude;
+            if (castDist < 0.08f)
+            {
+                iSeg++;
+                continue;
+            }
+
+            Vector3 dir = to / castDist;
+            int hits = Physics.SphereCastNonAlloc(
+                origin,
+                LineCoverClearance,
+                dir,
+                LineHits,
+                castDist,
+                mask,
+                QueryTriggerInteraction.Ignore);
+            if (!TryLineCoverHit(hits, a, b, out RaycastHit hit))
+            {
+                iSeg++;
+                continue;
+            }
+
+            Vector3 peak = LineCoverPeak(hit, b);
+            if ((peak - a).sqrMagnitude < 0.012f || (peak - b).sqrMagnitude < 0.012f)
+            {
+                iSeg++;
+                continue;
+            }
+
+            for (int i = count; i > iSeg + 1; i--)
+                points[i] = points[i - 1];
+            points[iSeg + 1] = peak;
+            count++;
+            bends++;
+            iSeg++;
+        }
+
+        return count;
+    }
+
+    static bool TryLineCoverHit(int hits, Vector3 from, Vector3 to, out RaycastHit best)
+    {
+        best = default;
+        bool found = false;
+        for (int i = 0; i < hits; i++)
+        {
+            RaycastHit hit = LineHits[i];
+            if (!IsLineCover(hit.collider) || hit.distance < 0.08f)
+                continue;
+            if ((hit.point - to).sqrMagnitude < 0.05f)
+                continue;
+            if ((hit.point - from).sqrMagnitude < 0.01f)
+                continue;
+            if (!found || hit.distance < best.distance)
+            {
+                best = hit;
+                found = true;
+            }
+        }
+
+        return found;
+    }
+
+    Vector3 LineCoverPeak(RaycastHit hit, Vector3 toward)
+    {
+        Vector3 peak = hit.point;
+        peak.y = Mathf.Max(peak.y, CoverTopY(peak)) + LineCoverClearance;
+        Vector3 along = toward - peak;
+        along.y = 0f;
+        if (along.sqrMagnitude > 0.0001f)
+            peak += along.normalized * 0.06f;
+        peak.y = Mathf.Max(peak.y, CoverTopY(peak) + LineCoverClearance);
+        return peak;
+    }
+
+    Vector3 LiftLineOffCover(Vector3 point)
+    {
+        float floor = CoverTopY(point) + LineCoverClearance;
+        if (point.y < floor)
+            point.y = floor;
+        return point;
+    }
+
+    static int LineDrapeMask()
+    {
+        return WorldConditions.StructureMask | 1;
+    }
+
+    static bool IsLineCover(Collider col)
+    {
+        if (col == null)
+            return false;
+        if (col.gameObject.layer == WorldConditions.StructureLayer)
+            return true;
+        return col.GetComponentInParent<BoatMotor>() != null;
+    }
+
+    float CoverTopY(Vector3 world)
+    {
+        float top = float.NegativeInfinity;
+        if (lake != null)
+            top = waterHeight - lake.GroundDepthMeters(world);
+
+        float boat = BoatTopY(world);
+        return boat > top ? boat : top;
+    }
+
+    float BoatTopY(Vector3 world)
+    {
+        Vector3 origin = world;
+        origin.y = Mathf.Max(hasWaterHeight ? waterHeight : world.y, world.y) + 3.5f;
+        int hits = Physics.RaycastNonAlloc(
+            origin,
+            Vector3.down,
+            CoverHits,
+            8f,
+            1,
+            QueryTriggerInteraction.Ignore);
+        float best = float.NegativeInfinity;
+        for (int i = 0; i < hits; i++)
+        {
+            RaycastHit hit = CoverHits[i];
+            if (hit.collider == null || hit.collider.GetComponentInParent<BoatMotor>() == null)
+                continue;
+            if (hit.point.y > best)
+                best = hit.point.y;
+        }
+
+        return best;
+    }
+
+    void EnsureCastLineBuffer(int needed)
+    {
+        if (castLineBuffer == null || castLineBuffer.Length < needed)
+            castLineBuffer = new Vector3[needed];
     }
 
     void EnsureLineBuffer()

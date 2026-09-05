@@ -32,6 +32,7 @@ public class SaveService : MonoBehaviour
     public LakeSave Lake { get; private set; }
     public PlayerSave Player { get; private set; }
     public IReadOnlyList<LakeSlot> Slots => catalog.slots;
+    public string CurrentSlotId => currentSlotId;
 
     /// <summary>
     /// True until the first write of the open slot. Systems use it to keep
@@ -142,6 +143,55 @@ public class SaveService : MonoBehaviour
     bool ShouldPersist()
     {
         return SessionActive && store != null;
+    }
+
+    /// <summary>Removes one porch lake and its documents. Returns false if the id is unknown.</summary>
+    public bool DeleteSlot(string slotId)
+    {
+        if (string.IsNullOrEmpty(slotId))
+            return false;
+
+        LakeSlot slot = FindSlot(slotId);
+        if (slot == null)
+            return false;
+
+        WiloAccount.ForgetSlotLater(slotId);
+
+        var slotStore = new LocalFileStore("wilo", slotId);
+        slotStore.Delete(LakeKey);
+        slotStore.Delete(PlayerKey);
+        slotStore.DeleteFolder();
+
+        catalog.slots.Remove(slot);
+        if (catalog.lastSlotId == slotId)
+            catalog.lastSlotId = NewestSlotId();
+
+        if (currentSlotId == slotId)
+        {
+            ForgetSceneRefs();
+            currentSlotId = "";
+            store = null;
+            SessionActive = false;
+            Lake = NewLake();
+            Player = NewPlayer();
+            IsNewGame = true;
+        }
+
+        WriteCatalog();
+        return true;
+    }
+
+    string NewestSlotId()
+    {
+        LakeSlot best = null;
+        for (int i = 0; i < catalog.slots.Count; i++)
+        {
+            LakeSlot slot = catalog.slots[i];
+            if (slot != null && (best == null || slot.lastPlayed > best.lastPlayed))
+                best = slot;
+        }
+
+        return best != null ? best.id : "";
     }
 
     /// <summary>Throws away the catalog and every slot.</summary>

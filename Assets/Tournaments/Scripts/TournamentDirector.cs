@@ -412,7 +412,11 @@ public class TournamentDirector : MonoBehaviour
                 SetPhase(TournamentPhase.Running);
                 bag.Reset(def.BagLimit);
                 BagChanged?.Invoke();
-                Notice?.Invoke($"{def.DisplayName} is underway. {def.FormatLabel} until {GameCalendar.FormatHour(def.EndHour)}.");
+                var boats = FindFirstObjectByType<TournamentBoatDirector>();
+                string pick = boats != null && boats.PlayerTakeoff > 0
+                    ? $" You're boat {boats.PlayerTakeoff} of {boats.TakeoffCount}."
+                    : "";
+                Notice?.Invoke($"{def.DisplayName} is underway.{pick} {def.FormatLabel} until {GameCalendar.FormatHour(def.EndHour)}.");
                 return;
             }
 
@@ -852,6 +856,11 @@ public class TournamentDirector : MonoBehaviour
     }
 
     public void NoticeFriend(string message)
+    {
+        Announce(message);
+    }
+
+    public void Announce(string message)
     {
         if (!string.IsNullOrEmpty(message))
             Notice?.Invoke(message);

@@ -22,16 +22,13 @@ public class TournamentSite : MonoBehaviour
     [Tooltip("The camp clearing around this marker, even if the ground is a low bank.")]
     [SerializeField, Min(1f)] float clearingRadius = 12f;
 
-    static readonly float[] MooringSides = { -4f, -3f, -2f, 2f, 3f, 4f };
-    static readonly float[] MooringOuts = { 1.5f, 3f, 4.5f, 6f, 8f };
-
     public Transform Dock => DockRoot;
 
     public Vector3 DockPosition => DockRoot != null ? DockRoot.position : transform.position;
 
     /// <summary>
-    /// End of the camp dock: a hull in the water off the tip, bow out.
-    /// Player pose is the tip pad, used only if boarding fails.
+    /// End of the camp dock: the authored fork slip, just right of the
+    /// pilings. Player pose is the tip pad, used only if boarding fails.
     /// </summary>
     public bool TryGetMorningPose(
         float waterHeight,
@@ -46,6 +43,15 @@ public class TournamentSite : MonoBehaviour
         playerPosition = pad != null ? pad.position : transform.position;
         playerRotation = facing.rotation;
 
+        Transform slip = FindSlip();
+        if (slip != null)
+        {
+            boatPosition = slip.position;
+            boatPosition.y = waterHeight;
+            boatRotation = slip.rotation * Quaternion.Euler(0f, 180f, 0f);
+            return true;
+        }
+
         Vector3 origin = facing.position;
         Vector3 forward = facing.forward;
         forward.y = 0f;
@@ -58,32 +64,24 @@ public class TournamentSite : MonoBehaviour
             right = Vector3.Cross(Vector3.up, forward);
         right.Normalize();
 
-        boatPosition = origin + right * 2f + forward * 3f;
-        float best = float.MaxValue;
-        var conditions = FindFirstObjectByType<WorldConditions>();
-        for (int s = 0; s < MooringSides.Length; s++)
-        {
-            for (int o = 0; o < MooringOuts.Length; o++)
-            {
-                Vector3 candidate = origin + right * MooringSides[s] + forward * MooringOuts[o];
-                float depth = conditions != null ? conditions.GeometricDepthMeters(candidate) : 0.8f;
-                if (depth < 0.55f)
-                    continue;
-
-                float dx = candidate.x - origin.x;
-                float dz = candidate.z - origin.z;
-                float dist = dx * dx + dz * dz;
-                if (dist >= best)
-                    continue;
-
-                best = dist;
-                boatPosition = candidate;
-            }
-        }
-
+        boatPosition = origin + right * 5f + forward * 3f;
         boatPosition.y = waterHeight;
         boatRotation = Quaternion.LookRotation(-forward, Vector3.up);
         return true;
+    }
+
+    Transform FindSlip()
+    {
+        Transform root = DockRoot;
+        if (root != null)
+        {
+            Transform child = root.Find("Slip_Fork1");
+            if (child != null)
+                return child;
+        }
+
+        var named = GameObject.Find("Slip_Fork1");
+        return named != null ? named.transform : null;
     }
 
     Transform EndLanding()

@@ -29,14 +29,14 @@ public class FishFight
     public float FishY => fishY;
     public float BarY => barY;
     public float BarHeight { get; private set; }
-    public float FishHeight => Mathf.Lerp(0.07f, 0.13f, size);
+    public float FishHeight => Mathf.Lerp(0.08f, 0.10f, size);
     public float Progress => progress;
     public float Size => size;
 
     public void Begin(float pounds)
     {
         size = FightSize(pounds);
-        BarHeight = Mathf.Lerp(0.24f, 0.16f, size);
+        BarHeight = Mathf.Lerp(0.24f, 0.18f, size);
         fishY = 0.52f;
         fishTarget = 0.52f;
         barY = 0.38f;
@@ -57,7 +57,7 @@ public class FishFight
 
         dt = Mathf.Max(0f, dt);
         time += dt;
-        stamina = Mathf.Max(0.18f, stamina - dt * Mathf.Lerp(0.035f, 0.07f, size));
+        stamina = Mathf.Max(0.18f, stamina - dt * Mathf.Lerp(0.035f, 0.06f, size));
 
         TickFish(dt);
         TickBar(held, dt);
@@ -72,19 +72,19 @@ public class FishFight
 
         float speed = dartUntil > time
             ? dartSpeed
-            : Mathf.Lerp(0.32f, 0.85f, size) * Mathf.Lerp(0.45f, 1f, stamina);
+            : Mathf.Lerp(0.32f, 0.60f, size) * Mathf.Lerp(0.45f, 1f, stamina);
         fishY = Mathf.MoveTowards(fishY, fishTarget, speed * dt);
         fishY = Mathf.Clamp01(fishY);
     }
 
     void PickTarget(bool first)
     {
-        float dartChance = first ? 0.15f : Mathf.Lerp(0.18f, 0.38f, size) * stamina;
+        float dartChance = first ? 0.15f : Mathf.Lerp(0.18f, 0.34f, size) * stamina;
         if (Random.value < dartChance)
         {
-            float away = fishY + (Random.value < 0.5f ? -1f : 1f) * Mathf.Lerp(0.22f, 0.42f, size);
+            float away = fishY + (Random.value < 0.5f ? -1f : 1f) * Mathf.Lerp(0.22f, 0.36f, size);
             fishTarget = Mathf.Clamp01(away + Random.Range(-0.08f, 0.08f));
-            dartSpeed = Mathf.Lerp(1.35f, 2.15f, size) * Mathf.Lerp(0.55f, 1f, stamina);
+            dartSpeed = Mathf.Lerp(1.35f, 1.90f, size) * Mathf.Lerp(0.55f, 1f, stamina);
             dartUntil = time + Mathf.Lerp(0.16f, 0.38f, Random.value);
             nextMoveTime = dartUntil + Mathf.Lerp(0.12f, 0.35f, Random.value);
             return;
@@ -92,7 +92,7 @@ public class FishFight
 
         fishTarget = Mathf.Clamp01(fishY + Random.Range(-0.18f, 0.18f));
         dartUntil = 0f;
-        nextMoveTime = time + Mathf.Lerp(0.35f, 1.05f, Random.value) * Mathf.Lerp(1.15f, 0.7f, size);
+        nextMoveTime = time + Mathf.Lerp(0.35f, 1.05f, Random.value) * Mathf.Lerp(1.15f, 0.78f, size);
     }
 
     void TickBar(bool held, float dt)
@@ -126,8 +126,8 @@ public class FishFight
     {
         float half = BarHeight * 0.5f + FishHeight * 0.45f;
         bool overlap = Mathf.Abs(barY - fishY) <= half;
-        float fill = Mathf.Lerp(0.24f, 0.14f, size);
-        float drain = Mathf.Lerp(0.13f, 0.19f, size);
+        float fill = Mathf.Lerp(0.26f, 0.13f, size);
+        float drain = Mathf.Lerp(0.12f, 0.18f, size);
         progress += (overlap ? fill : -drain) * dt;
         progress = Mathf.Clamp01(progress);
 
@@ -138,14 +138,13 @@ public class FishFight
     }
 
     /// <summary>
-    /// Bigger fish stay harder, but the last few pounds no longer max every
-    /// lerp. An 11 lb used to play like a 12 lb with a tiny bar and huge darts.
+    /// 1 lb is the easy baseline, 8 lb is about twice as hard. Heavier fish
+    /// add a little more, but stay on the same curve instead of going wild.
     /// </summary>
     static float FightSize(float pounds)
     {
-        float raw = Mathf.InverseLerp(0.5f, 12f, Mathf.Clamp(pounds, 0.5f, 12f));
-        if (raw <= 0.4f)
-            return raw;
-        return 0.4f + (raw - 0.4f) * (0.80f - 0.4f) / 0.6f;
+        if (pounds <= 8f)
+            return Mathf.InverseLerp(1f, 8f, Mathf.Clamp(pounds, 1f, 8f));
+        return 1f + Mathf.InverseLerp(8f, 12f, Mathf.Clamp(pounds, 8f, 12f)) * 0.12f;
     }
 }

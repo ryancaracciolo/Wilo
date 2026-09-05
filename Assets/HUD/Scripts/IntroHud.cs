@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -78,6 +79,9 @@ public class IntroHud : MonoBehaviour
     [SerializeField] GameObject treeB;
     [SerializeField] GameObject grass;
     [SerializeField] GameObject rock;
+    [SerializeField] string versionManifestUrl = AppVersion.DefaultManifestUrl;
+    [SerializeField] bool checkForUpdates = true;
+    [SerializeField] bool checkInEditor;
 
     UIDocument document;
     VisualElement root;
@@ -91,7 +95,15 @@ public class IntroHud : MonoBehaviour
     VisualElement vestRow;
     VisualElement pocketRow;
     VisualElement cardBody;
+    VisualElement updateLayer;
+    VisualElement updateCard;
+    VisualElement confirmLayer;
+    VisualElement confirmCard;
+    LakeSlot pendingDelete;
     bool creating;
+    bool built;
+    bool updateBlocked;
+    Coroutine versionCheck;
 
     AppearanceData draft;
     PlayerAppearance previewLook;
@@ -121,8 +133,24 @@ public class IntroHud : MonoBehaviour
         SpawnPreview();
     }
 
+    void Start()
+    {
+        if (!built)
+            Build();
+    }
+
     void OnDisable()
     {
+        built = false;
+        updateBlocked = false;
+        pendingDelete = null;
+        confirmLayer = null;
+        confirmCard = null;
+        if (versionCheck != null)
+        {
+            StopCoroutine(versionCheck);
+            versionCheck = null;
+        }
         HudInput.Reset();
         if (previewRoot != null)
             Destroy(previewRoot.gameObject);
@@ -154,6 +182,10 @@ public class IntroHud : MonoBehaviour
         if (root == null)
             return;
 
+        built = true;
+        confirmLayer = null;
+        confirmCard = null;
+        pendingDelete = null;
         root.Clear();
         root.AddToClassList("hud-root");
         root.AddToClassList("hud-intro");
@@ -191,6 +223,8 @@ public class IntroHud : MonoBehaviour
             RefreshChoices();
             RefreshSwatches();
         }
+
+        BeginVersionCheck();
     }
 
     void FillCard()
@@ -229,6 +263,7 @@ public class IntroHud : MonoBehaviour
         actions.AddToClassList("hud-form-actions");
         actions.Add(HudUi.TextButton("New lake", OpenCreate, true));
         cardBody.Add(actions);
+        AddVersionStamp();
     }
 
     void FillCreateCard()
@@ -275,6 +310,7 @@ public class IntroHud : MonoBehaviour
             actions.Add(HudUi.TextButton("Back", OpenHome));
         actions.Add(HudUi.TextButton("Head to the lake", TryCreate, true));
         cardBody.Add(actions);
+        AddVersionStamp();
     }
 
     VisualElement SlotRow(LakeSlot slot)
@@ -291,9 +327,124 @@ public class IntroHud : MonoBehaviour
         text.Add(HudUi.Muted($"{LakeChoice.DisplayName(slot.lakeKey)}  ·  Day {Mathf.Max(1, slot.dayIndex + 1)}"));
         row.Add(text);
 
+        var delete = new Button { text = "✕" };
+        delete.AddToClassList("hud-lake-slot-delete");
+        delete.tooltip = "Delete this lake";
+        delete.focusable = false;
+        delete.pickingMode = PickingMode.Ignore;
+        delete.RegisterCallback<ClickEvent>(evt =>
+        {
+            evt.StopImmediatePropagation();
+            AskDeleteSlot(slot);
+        });
+        row.Add(delete);
         row.Add(HudUi.TextButton("Continue", () => ContinueSlot(slot), true));
+        row.RegisterCallback<PointerEnterEvent>(_ => ShowSlotDelete(delete));
+        row.RegisterCallback<PointerLeaveEvent>(_ => HideSlotDelete(delete));
         row.RegisterCallback<ClickEvent>(_ => PreviewSlot(slot));
         return row;
+    }
+
+    static void ShowSlotDelete(Button delete)
+    {
+        delete.EnableInClassList("hud-lake-slot-delete--on", true);
+        delete.pickingMode = PickingMode.Position;
+    }
+
+    static void HideSlotDelete(Button delete)
+    {
+        delete.EnableInClassList("hud-lake-slot-delete--on", false);
+        delete.pickingMode = PickingMode.Ignore;
+    }
+
+    void AskDeleteSlot(LakeSlot slot)
+    {
+        if (updateBlocked || slot == null || root == null)
+            return;
+
+        pendingDelete = slot;
+        if (confirmLayer == null)
+        {
+            confirmLayer = new VisualElement();
+            confirmLayer.AddToClassList("hud-modal");
+            confirmLayer.RegisterCallback<ClickEvent>(OnConfirmBackgroundClicked);
+            confirmCard = new VisualElement();
+            confirmCard.AddToClassList("hud-card");
+            confirmCard.AddToClassList("hud-card--confirm");
+            confirmCard.pickingMode = PickingMode.Position;
+            confirmLayer.Add(confirmCard);
+            root.Add(confirmLayer);
+        }
+
+        string lake = LakeChoice.DisplayName(slot.lakeKey);
+        string body = string.IsNullOrWhiteSpace(slot.displayName)
+            ? $"This cabin on {lake} will be gone for good."
+            : $"{slot.displayName}'s cabin on {lake} will be gone for good.";
+
+        confirmCard.Clear();
+        var header = new VisualElement();
+        header.AddToClassList("hud-card-header");
+        header.Add(HudUi.Title("Delete this lake?"));
+        var x = new Button { text = "✕" };
+        x.AddToClassList("hud-close");
+        x.focusable = false;
+        x.clicked += HideDeleteConfirm;
+        header.Add(x);
+        confirmCard.Add(header);
+
+        confirmCard.Add(HudUi.Body(body));
+        confirmCard.Add(HudUi.Muted("This cannot be undone."));
+
+        var actions = new VisualElement();
+        actions.AddToClassList("hud-form-actions");
+        actions.Add(HudUi.TextButton("Cancel", HideDeleteConfirm));
+        Button confirm = HudUi.TextButton("Delete lake", ConfirmDeleteSlot);
+        confirm.AddToClassList("hud-text-button--danger");
+        actions.Add(confirm);
+        confirmCard.Add(actions);
+
+        confirmLayer.style.display = DisplayStyle.Flex;
+        confirmLayer.BringToFront();
+        HudInput.PopupOpen = true;
+    }
+
+    void OnConfirmBackgroundClicked(ClickEvent evt)
+    {
+        if (evt.target == confirmLayer)
+            HideDeleteConfirm();
+    }
+
+    void HideDeleteConfirm()
+    {
+        pendingDelete = null;
+        if (confirmLayer != null)
+            confirmLayer.style.display = DisplayStyle.None;
+        if (updateLayer == null || updateLayer.style.display == DisplayStyle.None)
+            HudInput.PopupOpen = false;
+    }
+
+    void ConfirmDeleteSlot()
+    {
+        LakeSlot slot = pendingDelete;
+        HideDeleteConfirm();
+        if (updateBlocked || slot == null)
+            return;
+
+        SaveService save = SaveService.Instance;
+        if (save == null || !save.DeleteSlot(slot.id))
+            return;
+
+        creating = save.Slots.Count == 0;
+        draft = creating ? PlayerAppearance.Defaults() : AppearanceOf(LastSlot());
+        previewLook?.Apply(draft);
+        FillCard();
+        if (creating)
+        {
+            RefreshChoices();
+            RefreshSwatches();
+        }
+
+        card.schedule.Execute(FrameCamera);
     }
 
     void AddWelcome(string lead)
@@ -305,6 +456,13 @@ public class IntroHud : MonoBehaviour
         Label copy = HudUi.Muted(lead);
         copy.AddToClassList("hud-intro-lead");
         cardBody.Add(copy);
+    }
+
+    void AddVersionStamp()
+    {
+        Label version = HudUi.Muted("Build " + AppVersion.Local);
+        version.AddToClassList("hud-intro-version");
+        cardBody.Add(version);
     }
 
     static Label Kicker(string text)
@@ -415,6 +573,9 @@ public class IntroHud : MonoBehaviour
 
     void ContinueSlot(LakeSlot slot)
     {
+        if (updateBlocked)
+            return;
+
         SaveService save = SaveService.Instance;
         if (save == null || slot == null || !save.OpenSlot(slot.id))
             return;
@@ -424,6 +585,9 @@ public class IntroHud : MonoBehaviour
 
     void TryCreate()
     {
+        if (updateBlocked)
+            return;
+
         SaveService save = SaveService.Instance;
         if (save == null)
             return;
@@ -447,6 +611,93 @@ public class IntroHud : MonoBehaviour
         save.Save();
         save.ActivateSession();
         GameFlow.ContinueToLake();
+    }
+
+    void BeginVersionCheck()
+    {
+        if (!checkForUpdates || string.IsNullOrWhiteSpace(versionManifestUrl))
+            return;
+        if (Application.isEditor && !checkInEditor)
+            return;
+
+        if (versionCheck != null)
+            StopCoroutine(versionCheck);
+        versionCheck = StartCoroutine(AppVersion.Check(versionManifestUrl, OnVersionManifest));
+    }
+
+    void OnVersionManifest(AppVersion.Manifest remote)
+    {
+        versionCheck = null;
+        AppVersion.Gate gate = AppVersion.Evaluate(remote, AppVersion.Local);
+        if (gate == AppVersion.Gate.Current)
+            return;
+
+        ShowUpdateGate(remote, gate == AppVersion.Gate.Required);
+    }
+
+    void ShowUpdateGate(AppVersion.Manifest remote, bool required)
+    {
+        if (root == null)
+            return;
+
+        if (updateLayer == null)
+        {
+            updateLayer = new VisualElement();
+            updateLayer.AddToClassList("hud-modal");
+            updateCard = new VisualElement();
+            updateCard.AddToClassList("hud-card");
+            updateLayer.Add(updateCard);
+            root.Add(updateLayer);
+        }
+
+        updateBlocked = required;
+        updateCard.Clear();
+
+        var header = new VisualElement();
+        header.AddToClassList("hud-card-header");
+        header.Add(HudUi.Title(required ? "This build is too old" : "A newer build is out"));
+        if (!required)
+        {
+            var x = new Button { text = "✕" };
+            x.AddToClassList("hud-close");
+            x.focusable = false;
+            x.clicked += DismissUpdateGate;
+            header.Add(x);
+        }
+        updateCard.Add(header);
+
+        string latest = remote != null ? remote.latest : "";
+        updateCard.Add(HudUi.Body("You're on " + AppVersion.Local +
+            (string.IsNullOrEmpty(latest) ? "." : ". Latest is " + latest + ".")));
+
+        if (remote != null && !string.IsNullOrWhiteSpace(remote.notes))
+            updateCard.Add(HudUi.Muted(remote.notes));
+        else if (required)
+            updateCard.Add(HudUi.Muted("Ask Ryan for this week's build. The lake has moved on."));
+        else
+            updateCard.Add(HudUi.Muted("This week's build is ready when you are."));
+
+        var actions = new VisualElement();
+        actions.AddToClassList("hud-form-actions");
+        if (!required)
+            actions.Add(HudUi.TextButton("Play anyway", DismissUpdateGate));
+        if (remote != null && !string.IsNullOrWhiteSpace(remote.url))
+            actions.Add(HudUi.TextButton("Get the update", () => Application.OpenURL(remote.url), true));
+        updateCard.Add(actions);
+
+        updateLayer.style.display = DisplayStyle.Flex;
+        updateLayer.BringToFront();
+        HudInput.PopupOpen = true;
+    }
+
+    void DismissUpdateGate()
+    {
+        if (updateBlocked)
+            return;
+
+        if (updateLayer != null)
+            updateLayer.style.display = DisplayStyle.None;
+        HudInput.PopupOpen = false;
     }
 
     void SpawnPreview()

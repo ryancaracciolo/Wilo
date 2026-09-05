@@ -54,6 +54,8 @@ public class TournamentLobby : MonoBehaviour
     public string LocalPlayerId { get; private set; } = "";
     public IReadOnlyList<AnglerPresence> Anglers => anglers;
 
+    public Task EnsureSignedInAsync() => EnsureServices();
+
     public event Action Changed;
     public event Action<string> Notice;
 
@@ -517,23 +519,13 @@ public class TournamentLobby : MonoBehaviour
 
     async Task EnsureServices()
     {
-        if (UnityServices.State == ServicesInitializationState.Uninitialized)
+        if (!IsActive)
+            await WiloAccount.SignInAsync();
+        else if (UnityServices.State == ServicesInitializationState.Uninitialized)
             await UnityServices.InitializeAsync();
 
         if (AuthenticationService.Instance.IsSignedIn)
-        {
             LocalPlayerId = AuthenticationService.Instance.PlayerId;
-            return;
-        }
-
-        if (Application.isEditor)
-        {
-            string profile = "wilo-" + System.Diagnostics.Process.GetCurrentProcess().Id;
-            AuthenticationService.Instance.SwitchProfile(profile);
-        }
-
-        await AuthenticationService.Instance.SignInAnonymouslyAsync();
-        LocalPlayerId = AuthenticationService.Instance.PlayerId;
     }
 
     void EnsureNetwork()

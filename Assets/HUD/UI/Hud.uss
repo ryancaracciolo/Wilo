@@ -143,6 +143,7 @@
 }
 
 .hud-icon-button > .unity-button__text,
+.hud-rest-chip > .unity-button__text,
 .hud-lure-chip > .unity-button__text,
 .hud-lure-option > .unity-button__text,
 .hud-tourney-chip > .unity-button__text {
@@ -342,6 +343,40 @@
     bottom: 14px;
     color: rgb(255, 248, 236);
     font-size: 13px;
+}
+
+.hud-bottom-left {
+    flex-direction: row;
+    align-items: center;
+}
+
+.hud-rest-chip {
+    flex-direction: row;
+    align-items: center;
+    height: 52px;
+    margin-left: 10px;
+    padding: 0 16px 0 12px;
+    border-radius: 26px;
+    border-width: 3px;
+    border-color: rgb(212, 180, 131);
+    background-color: rgb(255, 248, 236);
+}
+
+.hud-rest-chip:hover {
+    background-color: rgb(255, 252, 245);
+}
+
+.hud-rest-glyph {
+    width: 22px;
+    height: 22px;
+    margin-right: 8px;
+    flex-shrink: 0;
+}
+
+.hud-rest-label {
+    font-size: 14px;
+    color: rgb(76, 61, 47);
+    -unity-font-style: bold;
 }
 
 .hud-strip {
@@ -719,6 +754,11 @@
     flex-shrink: 0;
 }
 
+.hud-card-tabs--four .hud-tab {
+    font-size: 12px;
+    margin: 0 1px;
+}
+
 .hud-past-filter {
     margin-bottom: 8px;
     flex-shrink: 0;
@@ -790,9 +830,9 @@
 }
 
 .hud-tourney-row {
-    margin-top: 6px;
-    margin-bottom: 8px;
-    padding: 10px 12px 8px 12px;
+    margin-top: 4px;
+    margin-bottom: 4px;
+    padding: 8px 12px;
 }
 
 .hud-tourney-row--entered {
@@ -808,7 +848,32 @@
 .hud-tourney-head {
     flex-direction: row;
     align-items: center;
-    margin-bottom: 3px;
+    margin-bottom: 2px;
+}
+
+.hud-tourney-toggle {
+    padding: 2px 0;
+}
+
+.hud-tourney-toggle > .hud-tourney-chevron {
+    rotate: -90deg;
+}
+
+.hud-tourney-toggle--open > .hud-tourney-chevron {
+    rotate: 0deg;
+}
+
+.hud-tourney-toggle:hover > .hud-tourney-chevron {
+    background-color: rgb(255, 248, 236);
+}
+
+.hud-tourney-details {
+    flex-direction: column;
+    margin-top: 4px;
+}
+
+.hud-tourney-details > .hud-muted {
+    margin-bottom: 1px;
 }
 
 .hud-tourney-name {
@@ -1573,6 +1638,13 @@
     color: rgb(176, 96, 72);
 }
 
+.hud-intro-version {
+    margin-top: 14px;
+    margin-bottom: 0;
+    font-size: 11px;
+    color: rgb(168, 144, 118);
+}
+
 .hud-choice-row {
     flex-wrap: wrap;
     margin-right: -8px;
@@ -1654,6 +1726,23 @@
     display: none;
 }
 
+.hud-card--confirm {
+    width: 360px;
+}
+
+.hud-text-button--danger {
+    background-color: rgb(176, 96, 72);
+    color: rgb(255, 248, 236);
+}
+
+.hud-text-button--danger:hover {
+    background-color: rgb(192, 112, 86);
+}
+
+.hud-text-button--danger:active {
+    background-color: rgb(148, 78, 58);
+}
+
 .hud-lake-slot {
     flex-direction: row;
     align-items: center;
@@ -1664,6 +1753,11 @@
     border-width: 2px;
     border-color: rgb(226, 198, 158);
     background-color: rgb(255, 248, 236);
+}
+
+.hud-lake-slot:hover {
+    border-color: rgb(212, 180, 131);
+    background-color: rgb(255, 252, 245);
 }
 
 .hud-lake-slot-text {
@@ -1682,4 +1776,33 @@
 
 .hud-lake-slot > .hud-text-button {
     margin-top: 0;
+}
+
+.hud-lake-slot-delete {
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    min-width: 26px;
+    min-height: 26px;
+    margin: 0 8px 0 0;
+    padding: 0;
+    border-radius: 13px;
+    border-width: 2px;
+    border-color: rgb(226, 198, 158);
+    background-color: rgb(244, 226, 198);
+    color: rgb(122, 98, 74);
+    font-size: 13px;
+    -unity-text-align: middle-center;
+    overflow: hidden;
+    opacity: 0;
+}
+
+.hud-lake-slot-delete--on {
+    opacity: 1;
+}
+
+.hud-lake-slot-delete:hover {
+    background-color: rgb(176, 96, 72);
+    border-color: rgb(176, 96, 72);
+    color: rgb(255, 248, 236);
 }

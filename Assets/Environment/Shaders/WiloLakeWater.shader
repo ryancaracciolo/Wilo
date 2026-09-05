@@ -64,7 +64,7 @@ Shader "Wilo/Lake Water"
                 half _RippleStrength;
             CBUFFER_END
 
-            #define WILO_MAX_RIPPLES 32
+            #define WILO_MAX_RIPPLES 48
             float4 _WiloRipplePos[WILO_MAX_RIPPLES];
             float4 _WiloRippleParams[WILO_MAX_RIPPLES];
             float _WiloRippleCount;
@@ -151,8 +151,10 @@ Shader "Wilo/Lake Water"
                     float width = max(par.y, 0.05) * lerp(1.55, 1.12, circular);
                     float wave = exp(-offset * offset / (width * width));
 
-                    float patch = 0.55 + 0.45 * sin(ang * 4.0 + phase * 2.0 + age);
-                    patch *= 0.7 + 0.3 * Hash21(dir * 6.0 + pos.xy);
+                    float patch = 0.62
+                        + 0.22 * sin(ang * 3.0 + phase * 2.0 + age)
+                        + 0.16 * sin(ang * 5.0 + phase * 1.3 - age * 0.7);
+                    patch *= 0.78 + 0.22 * Hash21(dir * 6.0 + pos.xy);
                     patch = lerp(saturate(patch), 1.0, circular);
 
                     float life = max(pos.w, 0.01);

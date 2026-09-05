@@ -26,8 +26,8 @@ public class TournamentBoatAgent : MonoBehaviour
     Plan plan;
     Vector3 destination;
     float holdUntilHour;
-    float leaveHour;
     float returnHour;
+    int takeoffNumber;
     float stuckSeconds;
     Vector3 lastProgress;
 
@@ -41,17 +41,18 @@ public class TournamentBoatAgent : MonoBehaviour
         int seed,
         float startHour,
         float endHour,
-        float hour)
+        float hour,
+        int takeoff)
     {
         director = owner;
         motor = hull;
         angler = rider;
         AnglerName = anglerName ?? "";
+        takeoffNumber = Mathf.Max(1, takeoff);
         rng = new System.Random(seed);
         seat = hull != null ? hull.Seat : null;
         helm = hull != null ? hull.Helm : null;
 
-        leaveHour = startHour + (float)rng.NextDouble() * 0.18f;
         returnHour = endHour - Mathf.Lerp(0.45f, 1.15f, (float)rng.NextDouble());
 
         if (motor != null)
@@ -64,11 +65,11 @@ public class TournamentBoatAgent : MonoBehaviour
         lastProgress = transform.position;
         SnapAngler(false);
 
-        bool released = director != null && director.MayLeave;
+        bool released = director != null && director.MayLeaveNow(takeoffNumber);
         if (!released)
         {
             plan = Plan.LeaveCamp;
-            holdUntilHour = leaveHour;
+            holdUntilHour = startHour;
             return;
         }
 
@@ -81,13 +82,6 @@ public class TournamentBoatAgent : MonoBehaviour
         if (hour >= returnHour)
         {
             BeginReturn();
-            return;
-        }
-
-        if (hour <= leaveHour)
-        {
-            plan = Plan.LeaveCamp;
-            holdUntilHour = leaveHour;
             return;
         }
 
@@ -122,7 +116,7 @@ public class TournamentBoatAgent : MonoBehaviour
         switch (plan)
         {
             case Plan.LeaveCamp:
-                if (director.MayLeave && hour >= holdUntilHour)
+                if (director.MayLeaveNow(takeoffNumber))
                     BeginCruise();
                 else
                     motor.SetAiDrive(Vector2.zero);

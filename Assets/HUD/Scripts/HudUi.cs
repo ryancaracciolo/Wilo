@@ -422,6 +422,20 @@ public static class HudUi
         p.Fill();
     }
 
+    public static void PaintMoon(MeshGenerationContext ctx)
+    {
+        var r = ctx.visualElement.contentRect;
+        var p = ctx.painter2D;
+        Vector2 c = r.center;
+        float s = Mathf.Min(r.width, r.height);
+
+        p.fillColor = HudTheme.Ink;
+        p.BeginPath();
+        p.Arc(c, s * 0.3f, 0f, 360f);
+        p.Arc(new Vector2(c.x + s * 0.14f, c.y - s * 0.06f), s * 0.24f, 0f, 360f);
+        p.Fill(FillRule.OddEven);
+    }
+
     public static void PaintLock(MeshGenerationContext ctx)
     {
         var r = ctx.visualElement.contentRect;

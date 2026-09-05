@@ -27,6 +27,7 @@ public class GameHud : MonoBehaviour
     VisualElement popoverCatcher;
     VisualElement lurePopover;
     ScrollView lureList;
+    Button restChip;
     Button lureChip;
     float lurePlaceRight = float.NaN;
     float lurePlaceBottom = float.NaN;
@@ -84,6 +85,13 @@ public class GameHud : MonoBehaviour
     readonly List<TournamentOccurrence> enteredScratch = new List<TournamentOccurrence>();
     TourneyTab tourneyTab;
     bool tourneyEnteredPast;
+    TourneyLeaderFilter tourneyLeaderFilter;
+    bool tourneyLunkerLarge = true;
+    int leaderToken;
+    bool leaderBusy;
+    bool leaderReady;
+    LeaderboardKind leaderKind;
+    LeaderboardPage leaderPage;
     bool tournamentsOpen;
     TextField joinCodeField;
     VisualElement mapJournalLayer;
@@ -291,6 +299,7 @@ public class GameHud : MonoBehaviour
         else
             HudCues.Clear("turn-in");
 
+        RefreshRestChip();
         TickFade();
     }
 
@@ -480,8 +489,12 @@ public class GameHud : MonoBehaviour
 
         var bottom = new VisualElement();
         bottom.AddToClassList("hud-bottom");
+        var bottomLeft = new VisualElement();
+        bottomLeft.AddToClassList("hud-bottom-left");
         strip = new ConditionsStrip();
-        bottom.Add(strip);
+        bottomLeft.Add(strip);
+        bottomLeft.Add(BuildRestChip());
+        bottom.Add(bottomLeft);
         bottom.Add(BuildLureChip());
         root.Add(bottom);
 
@@ -672,6 +685,30 @@ public class GameHud : MonoBehaviour
         FillJournalDetail();
     }
 
+    VisualElement BuildRestChip()
+    {
+        restChip = new Button();
+        restChip.AddToClassList("hud-rest-chip");
+        restChip.tooltip = "Sleep until morning";
+        restChip.focusable = false;
+        restChip.clicked += OpenSleepSheet;
+
+        restChip.Add(HudUi.Glyph("hud-rest-glyph", HudUi.PaintMoon));
+        Label label = new Label("Rest");
+        label.AddToClassList("hud-rest-label");
+        label.pickingMode = PickingMode.Ignore;
+        restChip.Add(label);
+        RefreshRestChip();
+        return restChip;
+    }
+
+    void RefreshRestChip()
+    {
+        if (restChip == null)
+            return;
+        restChip.style.display = CanSleep ? DisplayStyle.Flex : DisplayStyle.None;
+    }
+
     VisualElement BuildLureChip()
     {
         lureChip = new Button();
@@ -767,6 +804,7 @@ public class GameHud : MonoBehaviour
             modalLayer.style.display = DisplayStyle.None;
 
         catchSheet.Clear();
+        AnglerLeaderboard.PublishLater(progress, director != null ? director.History : null);
         catchSheet.Add(HudUi.Muted(record.PersonalBest ? "Personal best!" : "Nice one"));
         catchSheet.Add(HudUi.Title(record.SpeciesName));
 
@@ -1028,9 +1066,6 @@ public class GameHud : MonoBehaviour
         stats.Add(HudUi.StatTile(reputation.ToString(), "Reputation", HudUi.PaintStar));
         body.Add(stats);
 
-        if (CanSleep)
-            body.Add(MakeRestSection());
-
         var pb = new VisualElement();
         pb.AddToClassList("hud-section");
         pb.AddToClassList("hud-profile-best");
@@ -1092,33 +1127,19 @@ public class GameHud : MonoBehaviour
         }
 
         body.Add(history);
+        body.Add(HudUi.Muted("Build " + Application.version));
         ShowModal();
     }
 
     bool CanSleep => dayCycle != null && !dayCycle.IsTurningIn && !DaySummaryOpen;
 
-    VisualElement MakeRestSection()
-    {
-        var rest = new VisualElement();
-        rest.AddToClassList("hud-section");
-        rest.Add(HudUi.Muted("Rest"));
-        rest.Add(HudUi.Body("Turn in for the night and wake tomorrow morning."));
-        if (conditions != null)
-            rest.Add(HudUi.Muted($"Next up  ·  {conditions.Calendar.DateLabelFor(conditions.DayIndex + 1)}"));
-
-        var actions = new VisualElement();
-        actions.AddToClassList("hud-form-actions");
-        actions.Add(HudUi.TextButton("Sleep until morning", OpenSleepSheet));
-        rest.Add(actions);
-        return rest;
-    }
-
     void OpenSleepSheet()
     {
-        if (!CanSleep)
+        if (!CanSleep || CatchSheetOpen || MapJournalOpen)
             return;
 
-        VisualElement body = BeginCard("Turn in", OpenProfile);
+        ClosePopovers();
+        VisualElement body = BeginCard("Turn in", CloseAllOverlays);
         int tomorrow = conditions != null ? conditions.DayIndex + 1 : 0;
         string date = conditions != null
             ? conditions.Calendar.DateLabelFor(tomorrow)
@@ -1137,7 +1158,7 @@ public class GameHud : MonoBehaviour
 
         var actions = new VisualElement();
         actions.AddToClassList("hud-form-actions");
-        actions.Add(HudUi.TextButton("Back", OpenProfile));
+        actions.Add(HudUi.TextButton("Back", CloseAllOverlays));
         actions.Add(HudUi.TextButton("Sleep", ConfirmSleep, true));
         body.Add(actions);
         ShowModal();
@@ -1204,7 +1225,7 @@ public class GameHud : MonoBehaviour
 
         var tabs = HudUi.TabRow();
         tabs.AddToClassList("hud-card-tabs");
-        tabs.Add(HudUi.Tab("Board", () =>
+        tabs.Add(HudUi.Tab("Upcoming", () =>
         {
             tourneyTab = TourneyTab.Board;
             OpenTournaments();
@@ -1219,10 +1240,20 @@ public class GameHud : MonoBehaviour
             tourneyTab = TourneyTab.Friends;
             OpenTournaments();
         }, tourneyTab == TourneyTab.Friends));
+        tabs.Add(HudUi.Tab("Leaderboard", () =>
+        {
+            if (tourneyTab != TourneyTab.Leaderboard)
+                InvalidateLeaderboard();
+            tourneyTab = TourneyTab.Leaderboard;
+            OpenTournaments();
+        }, tourneyTab == TourneyTab.Leaderboard));
+        tabs.AddToClassList("hud-card-tabs--four");
         modalCard.Insert(1, tabs);
 
         if (tourneyTab == TourneyTab.Friends)
             FillFriends(body);
+        else if (tourneyTab == TourneyTab.Leaderboard)
+            FillLeaderboardPage(body);
         else if (tourneyTab == TourneyTab.Entered)
         {
             var filter = HudUi.TabRow();
@@ -1247,6 +1278,164 @@ public class GameHud : MonoBehaviour
             FillBoard(body);
 
         ShowModal();
+    }
+
+    void FillLeaderboardPage(VisualElement body)
+    {
+        var filter = HudUi.TabRow();
+        filter.AddToClassList("hud-past-filter");
+        filter.Add(HudUi.Tab("Wins", () => SetLeaderFilter(TourneyLeaderFilter.Wins),
+            tourneyLeaderFilter == TourneyLeaderFilter.Wins));
+        filter.Add(HudUi.Tab("Reputation", () => SetLeaderFilter(TourneyLeaderFilter.Reputation),
+            tourneyLeaderFilter == TourneyLeaderFilter.Reputation));
+        filter.Add(HudUi.Tab("Lunkers", () => SetLeaderFilter(TourneyLeaderFilter.Lunkers),
+            tourneyLeaderFilter == TourneyLeaderFilter.Lunkers));
+        modalCard.Insert(2, filter);
+
+        if (tourneyLeaderFilter == TourneyLeaderFilter.Lunkers)
+        {
+            var species = HudUi.TabRow();
+            species.AddToClassList("hud-past-filter");
+            species.Add(HudUi.Tab("Large", () => SetLunkerSpecies(true), tourneyLunkerLarge));
+            species.Add(HudUi.Tab("Small", () => SetLunkerSpecies(false), !tourneyLunkerLarge));
+            modalCard.Insert(3, species);
+        }
+
+        FillLeaderboard(body);
+    }
+
+    void SetLeaderFilter(TourneyLeaderFilter filter)
+    {
+        if (tourneyLeaderFilter == filter)
+            return;
+        tourneyLeaderFilter = filter;
+        InvalidateLeaderboard();
+        OpenTournaments();
+    }
+
+    void SetLunkerSpecies(bool large)
+    {
+        if (tourneyLunkerLarge == large)
+            return;
+        tourneyLunkerLarge = large;
+        InvalidateLeaderboard();
+        OpenTournaments();
+    }
+
+    void InvalidateLeaderboard()
+    {
+        leaderToken++;
+        leaderBusy = false;
+        leaderReady = false;
+    }
+
+    LeaderboardKind CurrentLeaderKind()
+    {
+        switch (tourneyLeaderFilter)
+        {
+            case TourneyLeaderFilter.Wins: return LeaderboardKind.Wins;
+            case TourneyLeaderFilter.Reputation: return LeaderboardKind.Reputation;
+            default: return tourneyLunkerLarge
+                ? LeaderboardKind.LunkerLargemouth
+                : LeaderboardKind.LunkerSmallmouth;
+        }
+    }
+
+    void FillLeaderboard(VisualElement body)
+    {
+        LeaderboardKind kind = CurrentLeaderKind();
+        if (leaderReady && leaderKind == kind)
+        {
+            DrawLeaderboard(body);
+            return;
+        }
+
+        if (!leaderBusy || leaderKind != kind)
+        {
+            leaderBusy = true;
+            leaderKind = kind;
+            FetchLeaderboard(kind, ++leaderToken);
+        }
+
+        body.Add(HudUi.Body("Loading…"));
+    }
+
+    async void FetchLeaderboard(LeaderboardKind kind, int token)
+    {
+        LeaderboardPage page;
+        try
+        {
+            try
+            {
+                await AnglerLeaderboard.PublishAsync(progress, director != null ? director.History : null);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"Leaderboard publish: {e.Message}");
+            }
+
+            page = await AnglerLeaderboard.FetchAsync(
+                kind,
+                progress != null ? progress.DisplayName : "You",
+                AnglerLeaderboard.ScoreOf(kind, progress, director != null ? director.History : null));
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"Leaderboard: {e.Message}");
+            page = new LeaderboardPage(null, "", "Leaderboard isn't available just now.");
+        }
+
+        if (token != leaderToken)
+            return;
+
+        leaderPage = page;
+        leaderBusy = false;
+        leaderReady = true;
+        if (tournamentsOpen && tourneyTab == TourneyTab.Leaderboard)
+            OpenTournaments();
+    }
+
+    void DrawLeaderboard(VisualElement body)
+    {
+        if (!leaderPage.Ok)
+        {
+            body.Add(HudUi.Body(leaderPage.Error));
+            return;
+        }
+
+        if (progress != null && !progress.HasName)
+            body.Add(HudUi.Muted("Set your name on Profile so others can see it."));
+
+        IReadOnlyList<LeaderboardLine> rows = leaderPage.Rows;
+        if (rows == null || rows.Count == 0)
+        {
+            body.Add(HudUi.Body("No scores yet. Fish and enter tournaments."));
+            return;
+        }
+
+        for (int i = 0; i < rows.Count; i++)
+            body.Add(MakeLeaderRow(rows[i]));
+
+        if (leaderPage.Footer.Length > 0)
+            body.Add(HudUi.Muted(leaderPage.Footer));
+    }
+
+    static VisualElement MakeLeaderRow(LeaderboardLine line)
+    {
+        var row = new VisualElement();
+        row.AddToClassList("hud-section");
+        row.AddToClassList("hud-tourney-row");
+        if (line.IsLocal)
+            row.AddToClassList("hud-tourney-row--placed");
+
+        var head = new VisualElement();
+        head.AddToClassList("hud-tourney-head");
+        Label name = HudUi.Body($"#{line.Place}  {line.Name}");
+        name.AddToClassList("hud-tourney-name");
+        head.Add(name);
+        head.Add(HudUi.Pill(line.ScoreLabel, line.IsLocal));
+        row.Add(head);
+        return row;
     }
 
     void FillFriends(VisualElement body)
@@ -1541,14 +1730,24 @@ public class GameHud : MonoBehaviour
         head.Add(HudUi.Pill(place, result.Placed));
         row.Add(head);
 
+        if (result.Forfeited)
+            row.Add(HudUi.Muted("Missed the weigh-in"));
+        else
+        {
+            string bag = $"{result.Pounds:0.00} lb  ·  {result.Fish} fish";
+            if (result.Payout > 0)
+                bag += $"  ·  +${result.Payout}";
+            if (result.Reputation > 0)
+                bag += $"  ·  +{result.Reputation} Rep";
+            row.Add(HudUi.Muted(bag));
+        }
+
+        var details = new VisualElement();
         string date = conditions != null
             ? conditions.Calendar.DateLabelFor(result.DayIndex)
             : result.DateLabel;
         if (!string.IsNullOrEmpty(date))
-            row.Add(HudUi.Muted(date));
-        if (!result.Forfeited)
-            row.Add(HudUi.Muted($"{result.Pounds:0.00} lb  ·  {result.Fish} fish"));
-
+            details.Add(HudUi.Muted(date));
         if (result.WonLunkerLargemouth || result.WonLunkerSmallmouth)
         {
             var lunkers = HudUi.Row();
@@ -1556,17 +1755,15 @@ public class GameHud : MonoBehaviour
                 lunkers.Add(HudUi.Pill("LM lunker", true));
             if (result.WonLunkerSmallmouth)
                 lunkers.Add(HudUi.Pill("SM lunker", true));
-            row.Add(lunkers);
+            details.Add(lunkers);
         }
 
-        if (result.Payout > 0 || result.Reputation > 0)
+        if (details.childCount > 0)
         {
-            string haul = result.Payout > 0 ? $"+${result.Payout}" : "";
-            if (result.Reputation > 0)
-                haul = haul.Length > 0
-                    ? $"{haul}  ·  +{result.Reputation} Rep"
-                    : $"+{result.Reputation} Rep";
-            row.Add(HudUi.Muted(haul));
+            VisualElement chevron = HudUi.Glyph("hud-tourney-chevron", HudUi.PaintChevronDown);
+            head.Add(chevron);
+            row.Add(details);
+            BindTourneyFold(head, details);
         }
 
         return row;
@@ -1598,17 +1795,13 @@ public class GameHud : MonoBehaviour
         head.Add(name);
         if (registered)
             head.Add(HudUi.Pill("Entered", true));
-        head.Add(HudUi.Pill(def.TierLabel));
         if (conditions != null)
             head.Add(HudUi.Pill(TournamentSchedule.CountdownLabel(calendar, occurrence)));
+        VisualElement chevron = HudUi.Glyph("hud-tourney-chevron", HudUi.PaintChevronDown);
+        head.Add(chevron);
         row.Add(head);
 
-        row.Add(HudUi.Muted(conditions != null
-            ? TournamentSchedule.WhenLabel(calendar, occurrence)
-            : $"{def.Weekday}  ·  {def.WindowLabel}"));
         row.Add(HudUi.Muted($"{def.FormatLabel}  ·  {def.EntryLabel}"));
-        row.Add(HudUi.Muted($"{def.PlacesPurseLabel}  ·  {def.FieldSize + 1} anglers"));
-        row.Add(HudUi.Muted(def.LunkerPurseLabel));
 
         bool locked = !director.MeetsReputation(def);
         if (locked)
@@ -1619,6 +1812,39 @@ public class GameHud : MonoBehaviour
             row.Add(HudUi.Muted("Not enough money"));
         else if (!registered && director.HasRegistrationOn(occurrence.DayIndex) && !director.HasPassed(occurrence))
             row.Add(HudUi.Muted("Already entered a tournament that day"));
+
+        var details = new VisualElement();
+        details.Add(HudUi.Muted(conditions != null
+            ? TournamentSchedule.WhenLabel(calendar, occurrence)
+            : $"{def.Weekday}  ·  {def.WindowLabel}"));
+        details.Add(HudUi.Muted($"{def.TierLabel}  ·  {def.PlacesPurseLabel}"));
+        details.Add(HudUi.Muted($"{def.LunkerPurseLabel}  ·  {def.FieldSize + 1} anglers"));
+
+        var extra = new VisualElement();
+        extra.AddToClassList("hud-tourney-actions");
+        TournamentLobby lobby = TournamentLobby.Instance;
+        if (lobby != null && !lobby.IsActive && !lobby.Busy && director.CanInvite(def)
+            && director.Phase == TournamentPhase.Idle)
+        {
+            bool entered = director.HasUpcomingEntry(def);
+            string invite = entered || def.EntryFee <= 0
+                ? "Invite"
+                : $"Invite · ${def.EntryFee}";
+            extra.Add(HudUi.TextButton(invite, () =>
+            {
+                tourneyTab = TourneyTab.Friends;
+                lobby.Host(def);
+                OpenTournaments();
+            }));
+        }
+
+        if (director.CanSkipTo(occurrence))
+            extra.Add(HudUi.TextButton("Skip to", () => OpenSkipSheet(occurrence)));
+        if (extra.childCount > 0)
+            details.Add(extra);
+
+        row.Add(details);
+        BindTourneyFold(head, details);
 
         var actions = new VisualElement();
         actions.AddToClassList("hud-tourney-actions");
@@ -1639,28 +1865,23 @@ public class GameHud : MonoBehaviour
             }, true));
         }
 
-        TournamentLobby lobby = TournamentLobby.Instance;
-        if (lobby != null && !lobby.IsActive && !lobby.Busy && director.CanInvite(def)
-            && director.Phase == TournamentPhase.Idle)
-        {
-            bool entered = director.HasUpcomingEntry(def);
-            string invite = entered || def.EntryFee <= 0
-                ? "Invite"
-                : $"Invite · ${def.EntryFee}";
-            actions.Add(HudUi.TextButton(invite, () =>
-            {
-                tourneyTab = TourneyTab.Friends;
-                lobby.Host(def);
-                OpenTournaments();
-            }));
-        }
-
-        if (director.CanSkipTo(occurrence))
-            actions.Add(HudUi.TextButton("Skip to", () => OpenSkipSheet(occurrence)));
         if (actions.childCount > 0)
             row.Add(actions);
 
         return row;
+    }
+
+    static void BindTourneyFold(VisualElement head, VisualElement details)
+    {
+        head.AddToClassList("hud-tourney-toggle");
+        details.AddToClassList("hud-tourney-details");
+        details.style.display = DisplayStyle.None;
+        head.RegisterCallback<ClickEvent>(_ =>
+        {
+            bool open = !head.ClassListContains("hud-tourney-toggle--open");
+            details.style.display = open ? DisplayStyle.Flex : DisplayStyle.None;
+            head.EnableInClassList("hud-tourney-toggle--open", open);
+        });
     }
 
     void RegisterFor(TournamentOccurrence occurrence)
@@ -1784,6 +2005,7 @@ public class GameHud : MonoBehaviour
                 return;
             }
 
+            AnglerLeaderboard.PublishLater(progress, director != null ? director.History : null);
             confirmed();
         }
 
@@ -1806,6 +2028,7 @@ public class GameHud : MonoBehaviour
         if (modalCard == null || result == null)
             return;
 
+        AnglerLeaderboard.PublishLater(progress, director != null ? director.History : null);
         ClosePopovers();
         if (result.Placed || result.Paid)
             ShowPrize(result);
@@ -2325,6 +2548,7 @@ public class GameHud : MonoBehaviour
         ClosePopovers();
         HudInput.Typing = false;
         tournamentsOpen = false;
+        InvalidateLeaderboard();
         if (modalLayer != null)
             modalLayer.style.display = DisplayStyle.None;
         if (mapJournalLayer != null)
@@ -2727,7 +2951,15 @@ public class GameHud : MonoBehaviour
     {
         Board,
         Entered,
-        Friends
+        Friends,
+        Leaderboard
+    }
+
+    enum TourneyLeaderFilter
+    {
+        Wins,
+        Reputation,
+        Lunkers
     }
 }
 

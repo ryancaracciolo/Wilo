@@ -9,8 +9,9 @@ using UnityEngine.SceneManagement;
 [DefaultExecutionOrder(80)]
 public class WaterRipples : MonoBehaviour
 {
-    public const int MaxRipples = 32;
-    const int ReservedRipples = 9;
+    public const int MaxRipples = 48;
+    // Player wake writes here so tournament boats cannot starve it.
+    const int ReservedRipples = 24;
 
     [SerializeField] WaterRippleProfile castRipple = WaterRippleProfile.Cast;
     [SerializeField] WaterRippleProfile reelRipple = WaterRippleProfile.Reel;
@@ -238,12 +239,12 @@ public struct WaterRippleProfile
     public static WaterRippleProfile Boat => new WaterRippleProfile
     {
         speed = 3.8f,
-        width = 0.62f,
+        width = 0.68f,
         amplitude = 1.2f,
-        lifetime = 1.55f,
+        lifetime = 1.7f,
         rings = 1,
         ringDelay = 0f,
-        circularity = 0.28f
+        circularity = 0.62f
     };
 
     public static WaterRippleProfile Wade => new WaterRippleProfile

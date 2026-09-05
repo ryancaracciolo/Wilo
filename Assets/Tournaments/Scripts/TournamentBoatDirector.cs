@@ -71,18 +71,40 @@ public class TournamentBoatDirector : MonoBehaviour
     [SerializeField] float boatSpacing = 12f;
     [SerializeField] float campSpacing = 7f;
 
+    [Tooltip("Real seconds between each blast-off number.")]
+    [SerializeField, Min(0.25f)] float takeoffGapSeconds = 2f;
+
     readonly List<TournamentBoatAgent> field = new List<TournamentBoatAgent>();
     readonly List<string> names = new List<string>();
     readonly List<GameObject> spawned = new List<GameObject>();
+    readonly List<int> takeoffOrder = new List<int>();
 
     Vector3 waterSide = Vector3.forward;
+    Vector3 lastHeldPosition;
+    Quaternion lastHeldRotation;
     bool hooked;
     bool laidOut;
+    bool hasHeldPose;
+    bool announcedGo;
+    bool announcedPick;
+    float blastOffAt = -1f;
+    float holdNoticeAt;
+    PlayerBoatInteractor playerBoats;
+    Transform player;
 
     public float Hour => conditions != null ? conditions.Hour : 0f;
+    public int PlayerTakeoff { get; private set; }
+    public int TakeoffCount { get; private set; }
 
-    /// <summary>Rivals stay put at camp until the player actually blasts off.</summary>
+    /// <summary>True once the window is open. Individual boats still wait their number.</summary>
     public bool MayLeave => director != null && director.IsRunning;
+
+    public bool MayLeaveNow(int takeoffNumber)
+    {
+        if (!MayLeave || blastOffAt < 0f || takeoffNumber < 1)
+            return false;
+        return Time.time >= blastOffAt + (takeoffNumber - 1) * takeoffGapSeconds;
+    }
 
     void OnEnable()
     {
@@ -104,6 +126,17 @@ public class TournamentBoatDirector : MonoBehaviour
         Resolve();
         Hook();
         Sync();
+        TickBlastOff();
+        if (announcedGo || !MayLeaveNow(PlayerTakeoff))
+            return;
+
+        announcedGo = true;
+        director?.Announce($"Boat {PlayerTakeoff} — you're off.");
+    }
+
+    void LateUpdate()
+    {
+        HoldPlayerAtCamp();
     }
 
     void OnPhaseChanged(TournamentPhase _)
@@ -119,6 +152,7 @@ public class TournamentBoatDirector : MonoBehaviour
             return;
         }
 
+        AssignTakeoff(occurrence);
         SpawnField(occurrence);
         if (director != null && director.AwaitingWeighIn)
             RecallAll();
@@ -189,9 +223,167 @@ public class TournamentBoatDirector : MonoBehaviour
             }
 
             var agent = hullGo.AddComponent<TournamentBoatAgent>();
-            agent.Bind(this, hull, rider.transform, anglerName, occurrence.DayIndex * 17 + i * 13, def.StartHour, def.EndHour, hour);
+            agent.Bind(
+                this,
+                hull,
+                rider.transform,
+                anglerName,
+                occurrence.DayIndex * 17 + i * 13,
+                def.StartHour,
+                def.EndHour,
+                hour,
+                TakeoffForAgent(i));
             field.Add(agent);
         }
+
+        if (!announcedPick && PlayerTakeoff > 0 && director != null && !director.IsRunning)
+        {
+            announcedPick = true;
+            director.Announce($"You're boat {PlayerTakeoff} of {TakeoffCount}.");
+        }
+    }
+
+    void AssignTakeoff(TournamentOccurrence occurrence)
+    {
+        if (TakeoffCount > 0)
+            return;
+        if (!occurrence.IsValid)
+            return;
+
+        TournamentDefinition def = occurrence.Definition;
+        int ai = boatCount > 0 ? boatCount : def.FieldSize;
+        ai = Mathf.Clamp(ai, 1, Mathf.Min(maxBoats, 24));
+        int n = ai + 1;
+        takeoffOrder.Clear();
+        for (int i = 0; i < n; i++)
+            takeoffOrder.Add(i);
+
+        var rng = new System.Random(Seed(occurrence.Id, occurrence.DayIndex) ^ 4049);
+        for (int i = n - 1; i > 0; i--)
+        {
+            int j = rng.Next(i + 1);
+            int swap = takeoffOrder[i];
+            takeoffOrder[i] = takeoffOrder[j];
+            takeoffOrder[j] = swap;
+        }
+
+        TakeoffCount = n;
+        PlayerTakeoff = takeoffOrder.IndexOf(0) + 1;
+    }
+
+    int TakeoffForAgent(int agentIndex)
+    {
+        int id = agentIndex + 1;
+        int slot = takeoffOrder.IndexOf(id);
+        return slot >= 0 ? slot + 1 : agentIndex + 2;
+    }
+
+    void TickBlastOff()
+    {
+        if (director == null || director.IsFriendEvent)
+            return;
+
+        if (!director.IsRunning)
+        {
+            if (director.Phase == TournamentPhase.Idle)
+                blastOffAt = -1f;
+            return;
+        }
+
+        if (blastOffAt >= 0f)
+            return;
+
+        float start = director.ActiveDefinition != null ? director.ActiveDefinition.StartHour : 7f;
+        if (Hour >= start + 0.08f)
+            blastOffAt = Time.time - TakeoffCount * takeoffGapSeconds;
+        else
+            blastOffAt = Time.time;
+    }
+
+    bool ShouldHoldPlayer()
+    {
+        if (director == null || site == null || director.IsFriendEvent)
+            return false;
+        if (director.AwaitingWeighIn)
+            return false;
+        if (MayLeaveNow(PlayerTakeoff))
+            return false;
+        return TryOccurrence(out _);
+    }
+
+    void HoldPlayerAtCamp()
+    {
+        if (!ShouldHoldPlayer())
+            return;
+
+        ResolvePlayer();
+        Vector3 pos = PlayerHull();
+        if (site.Contains(pos))
+        {
+            lastHeldPosition = pos;
+            Transform held = HeldTransform();
+            if (held != null)
+                lastHeldRotation = held.rotation;
+            hasHeldPose = true;
+            return;
+        }
+
+        if (!hasHeldPose)
+            return;
+
+        BoatMotor hull = OccupiedHull();
+        if (hull != null)
+        {
+            hull.Halt();
+            hull.transform.SetPositionAndRotation(lastHeldPosition, lastHeldRotation);
+        }
+        else if (player != null)
+        {
+            var controller = player.GetComponent<CharacterController>();
+            if (controller != null)
+                controller.enabled = false;
+            player.SetPositionAndRotation(lastHeldPosition, lastHeldRotation);
+            if (controller != null)
+                controller.enabled = true;
+        }
+
+        if (Time.time < holdNoticeAt + 2.4f || director == null)
+            return;
+
+        holdNoticeAt = Time.time;
+        TournamentDefinition def = director.ActiveDefinition;
+        if (def == null && TryOccurrence(out TournamentOccurrence occ))
+            def = occ.Definition;
+        if (!MayLeave)
+        {
+            string when = def != null ? GameCalendar.FormatHour(def.StartHour) : "7:00 AM";
+            director.Announce($"Hold at camp. Blast-off is at {when}.");
+            return;
+        }
+
+        director.Announce($"Not yet — you're boat {PlayerTakeoff} of {TakeoffCount}.");
+    }
+
+    Transform HeldTransform()
+    {
+        BoatMotor hull = OccupiedHull();
+        return hull != null ? hull.transform : player;
+    }
+
+    BoatMotor OccupiedHull()
+    {
+        return playerBoats != null ? playerBoats.OccupiedBoat : null;
+    }
+
+    void ResolvePlayer()
+    {
+        if (player != null)
+            return;
+        var go = GameObject.FindGameObjectWithTag("Player");
+        if (go == null)
+            return;
+        player = go.transform;
+        playerBoats = go.GetComponent<PlayerBoatInteractor>();
     }
 
     void Despawn()
@@ -204,7 +396,14 @@ public class TournamentBoatDirector : MonoBehaviour
 
         spawned.Clear();
         field.Clear();
+        takeoffOrder.Clear();
         laidOut = false;
+        announcedGo = false;
+        announcedPick = false;
+        hasHeldPose = false;
+        blastOffAt = -1f;
+        PlayerTakeoff = 0;
+        TakeoffCount = 0;
     }
 
     void RecallAll()

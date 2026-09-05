@@ -54,6 +54,20 @@ public class LocalFileStore : ISaveStore
         TryDelete(PathFor(key) + ".tmp");
     }
 
+    /// <summary>Removes this store's folder. Only call on a slot store, never the catalog root.</summary>
+    public void DeleteFolder()
+    {
+        try
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, true);
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"Save: could not remove '{root}'. {e.Message}");
+        }
+    }
+
     string PathFor(string key) => Path.Combine(root, key + ".json");
 
     string BackupFor(string key) => PathFor(key) + ".bak";

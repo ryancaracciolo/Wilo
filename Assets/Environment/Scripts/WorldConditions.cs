@@ -44,10 +44,15 @@ public class WorldConditions : MonoBehaviour
     };
     static readonly RaycastHit[] DepthHits = new RaycastHit[24];
     static readonly List<Renderer> StructureScratch = new List<Renderer>();
+    readonly List<RockBlob> rockBlobs = new List<RockBlob>(320);
+    readonly Dictionary<long, List<int>> rockGrid = new Dictionary<long, List<int>>(128);
+    readonly HashSet<int> rockSeen = new HashSet<int>();
     const string LureColliderName = "LureCollider";
+    const float RockCell = 16f;
     static int depthIgnoreMask;
 
     bool structureCached;
+    bool rocksBaked;
     float depthSampleAt;
     Vector3 depthSamplePos;
 
@@ -449,56 +454,110 @@ public class WorldConditions : MonoBehaviour
     }
 
     /// <summary>
-    /// Rock height above the bed. Uses collider bounds so the sonar mound
-    /// follows the boulder, not every jagged mesh face.
+    /// Rock height above the bed from renderer bounds, not lure colliders.
+    /// Those colliders are created later (or not at all if the cache already
+    /// ran), which made sonar rocks work once and then go missing.
     /// </summary>
     float SampleRockRiseMeters(Vector3 world, Vector3 right, float beam, float bedMeters)
     {
+        EnsureRockBlobs();
+        float rockBeam = Mathf.Max(beam, 1.6f);
         float rise = RockRiseAt(world, bedMeters);
-        if (beam <= 0.01f)
-            return rise;
-
-        rise = Mathf.Max(rise, RockRiseAt(world + right * beam, bedMeters));
-        rise = Mathf.Max(rise, RockRiseAt(world - right * beam, bedMeters));
+        rise = Mathf.Max(rise, RockRiseAt(world + right * rockBeam, bedMeters));
+        rise = Mathf.Max(rise, RockRiseAt(world - right * rockBeam, bedMeters));
         return rise;
     }
 
     float RockRiseAt(Vector3 world, float bedMeters)
     {
-        if (!hasWaterHeight)
+        if (!hasWaterHeight || rockBlobs.Count == 0)
             return 0f;
-        if (!structureCached)
-            CacheStructure();
 
-        int mask = StructureMask;
-        if (mask == 0)
-            mask = DepthIgnoreMask();
-
-        Vector3 origin = world;
-        origin.y = waterHeight + 2.5f;
-        int hitCount = Physics.RaycastNonAlloc(origin, Vector3.down, DepthHits, 80f, mask, QueryTriggerInteraction.Ignore);
+        rockSeen.Clear();
+        int cx = Mathf.FloorToInt(world.x / RockCell);
+        int cz = Mathf.FloorToInt(world.z / RockCell);
         float best = 0f;
-        for (int i = 0; i < hitCount; i++)
+        for (int ix = cx - 1; ix <= cx + 1; ix++)
         {
-            RaycastHit hit = DepthHits[i];
-            if (hit.collider == null || !IsRockTransform(hit.transform))
-                continue;
+            for (int iz = cz - 1; iz <= cz + 1; iz++)
+            {
+                if (!rockGrid.TryGetValue(RockKey(ix, iz), out List<int> list))
+                    continue;
 
-            Bounds b = hit.collider.bounds;
-            float topDepth = waterHeight - b.max.y;
-            if (topDepth >= bedMeters - 0.02f)
-                continue;
+                for (int i = 0; i < list.Count; i++)
+                {
+                    int id = list[i];
+                    if (!rockSeen.Add(id))
+                        continue;
 
-            float nx = Mathf.Abs(world.x - b.center.x) / Mathf.Max(0.15f, b.extents.x);
-            float nz = Mathf.Abs(world.z - b.center.z) / Mathf.Max(0.15f, b.extents.z);
-            float fade = 1f - Mathf.SmoothStep(0.4f, 1.05f, Mathf.Max(nx, nz));
-            if (fade <= 0.01f)
-                continue;
+                    RockBlob blob = rockBlobs[id];
+                    float topDepth = waterHeight - blob.TopY;
+                    float rise = bedMeters - topDepth;
+                    if (rise <= 0.05f)
+                        continue;
 
-            best = Mathf.Max(best, (bedMeters - topDepth) * fade);
+                    float nx = Mathf.Abs(world.x - blob.X) / Mathf.Max(0.2f, blob.ExtX);
+                    float nz = Mathf.Abs(world.z - blob.Z) / Mathf.Max(0.2f, blob.ExtZ);
+                    float fade = 1f - Mathf.SmoothStep(0.5f, 1.12f, Mathf.Max(nx, nz));
+                    if (fade <= 0.01f)
+                        continue;
+
+                    best = Mathf.Max(best, rise * fade);
+                }
+            }
         }
 
         return best;
+    }
+
+    void EnsureRockBlobs()
+    {
+        if (rocksBaked)
+            return;
+
+        rockBlobs.Clear();
+        rockGrid.Clear();
+        var root = GameObject.Find("Rocks");
+        if (root == null)
+            return;
+
+        StructureScratch.Clear();
+        root.GetComponentsInChildren(true, StructureScratch);
+        for (int i = 0; i < StructureScratch.Count; i++)
+        {
+            Renderer renderer = StructureScratch[i];
+            if (renderer == null || !renderer.enabled || !renderer.gameObject.activeInHierarchy)
+                continue;
+
+            Bounds b = renderer.bounds;
+            int id = rockBlobs.Count;
+            rockBlobs.Add(new RockBlob(b.center.x, b.center.z, b.extents.x, b.extents.z, b.max.y));
+            float reach = Mathf.Max(b.extents.x, b.extents.z);
+            int span = Mathf.Max(1, Mathf.CeilToInt(reach / RockCell));
+            int cx = Mathf.FloorToInt(b.center.x / RockCell);
+            int cz = Mathf.FloorToInt(b.center.z / RockCell);
+            for (int x = cx - span; x <= cx + span; x++)
+            {
+                for (int z = cz - span; z <= cz + span; z++)
+                {
+                    long key = RockKey(x, z);
+                    if (!rockGrid.TryGetValue(key, out List<int> list))
+                    {
+                        list = new List<int>(4);
+                        rockGrid[key] = list;
+                    }
+
+                    list.Add(id);
+                }
+            }
+        }
+
+        rocksBaked = true;
+    }
+
+    static long RockKey(int x, int z)
+    {
+        return ((long)x << 32) ^ (uint)z;
     }
 
     float SampleColumn(Vector3 world, bool includeStructure = true)
@@ -565,20 +624,6 @@ public class WorldConditions : MonoBehaviour
         return HitsNamedRoot(hit, CoverRoots);
     }
 
-    static bool IsRockTransform(Transform hit)
-    {
-        Transform t = hit;
-        while (t != null)
-        {
-            string name = t.name;
-            if (name == "Rocks" || name.StartsWith("Rocks_"))
-                return true;
-            t = t.parent;
-        }
-
-        return false;
-    }
-
     static bool HitsNamedRoot(Transform hit, string[] roots)
     {
         Transform t = hit;
@@ -607,6 +652,8 @@ public class WorldConditions : MonoBehaviour
     {
         if (structureCached || !Application.isPlaying)
             return;
+
+        EnsureRockBlobs();
 
         int layer = StructureLayer;
         if (layer < 0)
@@ -695,5 +742,23 @@ public class WorldConditions : MonoBehaviour
             waterVisibility = hideFeet / (3.28084f * GameplayDepthScale);
         }
         hasWaterHeight = true;
+    }
+
+    readonly struct RockBlob
+    {
+        public readonly float X;
+        public readonly float Z;
+        public readonly float ExtX;
+        public readonly float ExtZ;
+        public readonly float TopY;
+
+        public RockBlob(float x, float z, float extX, float extZ, float topY)
+        {
+            X = x;
+            Z = z;
+            ExtX = extX;
+            ExtZ = extZ;
+            TopY = topY;
+        }
     }
 }
